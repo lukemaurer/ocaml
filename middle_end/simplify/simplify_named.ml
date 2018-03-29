@@ -290,7 +290,7 @@ let simplify_set_of_closures original_env r
 let try_to_reify env r ty ~(term : Flambda.Reachable.t) ~result_var
       ~remove_term ~can_lift =
   match term with
-  | Invalid _ -> 
+  | Invalid _ ->
     let ty = T.bottom_like ty in
     [], term, ty, remove_term ()
   | Reachable _ ->
@@ -327,13 +327,6 @@ let simplify_named env r (tree : Named.t) ~result_var =
         ~bound_name:(Name.var result_var) simple
     in
     [], Flambda.Reachable.reachable (Simple simple), ty, r
-  | Read_mutable mut_var ->
-    (* See comment on the [Assign] case. *)
-    let mut_var =
-      Freshening.apply_mutable_variable (E.freshening env) mut_var
-    in
-    let ty = E.find_mutable_exn env mut_var in
-    [], Flambda.Reachable.reachable (Read_mutable mut_var), ty, r
   | Set_of_closures set_of_closures ->
 (*
     let backend = E.backend env in
@@ -449,12 +442,3 @@ Format.eprintf "Prim %a: type %a\n%!" Variable.print result_var T.print ty;
     try_to_reify (E.get_typing_environment env) r ty
       ~term ~result_var ~remove_term:remove_primitive
       ~can_lift:effects_and_coeffects_ok
-  | Assign { being_assigned; new_value; } ->
-    let being_assigned =
-      Freshening.apply_mutable_variable (E.freshening env) being_assigned
-    in
-    (* CR mshinwell: This needs a kind check, but we're planning to remove
-       mutable variables soon anyway, so we won't bother *)
-    let new_value, _ty = Simplify_simple.simplify_simple env new_value in
-    [], Flambda.Reachable.reachable (Assign { being_assigned; new_value; }),
-      T.unit (), r

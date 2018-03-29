@@ -237,17 +237,6 @@ let rec sink_expr (expr : Flambda.Expr.t) ~state : Flambda.Expr.t * State.t =
         keep_let (), add_candidates ~sink_into:[]
       end
     end
-  | Let_mutable { var; initial_value; contents_type; body; }->
-    let body, state = sink_expr body ~state in
-    let state =
-      match initial_value with
-      | Name (Var initial_value) ->
-        State.add_candidates_to_sink state
-          ~sink_into:[]
-          ~candidates_to_sink:(Variable.Set.singleton initial_value)
-      | Name (Symbol _) | Const _ | Discriminant _ -> state
-    in
-    Let_mutable { var; initial_value; contents_type; body; }, state
   | Let_cont { body; handlers = Recursive handlers; } ->
     let body = sink body in
     let handlers, state =
@@ -356,9 +345,6 @@ and sink (expr : Flambda.Expr.t) =
       else
         let defining_expr = W.of_defining_expr_of_let let_expr in
         W.create_let_reusing_defining_expr var defining_expr body
-    | Let_mutable { var; initial_value; contents_type; body; } ->
-      let body = sink body in
-      Let_mutable { var; initial_value; contents_type; body; }
     | Let_cont { body; handlers = Non_recursive { name; handler = {
         params; stub; is_exn_handler; handler; }; }; } ->
       let body = sink body in

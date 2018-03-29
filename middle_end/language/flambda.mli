@@ -21,7 +21,6 @@
 
 module F0 = Flambda0
 
-type assign = F0.assign
 type inline_attribute = F0.inline_attribute =
   | Always_inline
   | Never_inline
@@ -49,8 +48,6 @@ module Let :
   module type of struct include F0.Let end
 module Let_cont :
   module type of struct include F0.Let_cont end
-module Let_mutable :
-  module type of struct include F0.Let_mutable end
 module Switch :
   module type of struct include F0.Switch end
 module Trap_action :
@@ -194,11 +191,11 @@ module rec Expr : sig
       -> (Named.t -> unit)
       -> t
       -> unit
-        
+
     val iter_expr : (t -> unit) -> t -> unit
 
     val iter_named : (Named.t -> unit) -> t -> unit
-    
+
     val iter_all_immutable_let_and_let_rec_bindings
        : t
       -> f:(Variable.t -> Named.t -> unit)
@@ -217,8 +214,8 @@ module rec Expr : sig
       -> unit
 
     (** Iterators, mappers and folders in [Toplevel_only] modules never
-        recurse into the bodies of functions. *) 
-    module Toplevel_only : sig 
+        recurse into the bodies of functions. *)
+    module Toplevel_only : sig
       val iter
         : (t -> unit)
        -> (Named.t -> unit)
@@ -231,7 +228,7 @@ module rec Expr : sig
         -> unit
     end
   end
-    
+
   module Mappers : sig
     val map : (t -> t) -> (Named.t -> Named.t) -> t -> t
 
@@ -260,7 +257,7 @@ module rec Expr : sig
        : t
       -> f:(Set_of_closures.t -> Set_of_closures.t)
       -> t
-  
+
     val map_apply : t -> f:(Apply.t -> Apply.t) -> t
 
     val map_all_immutable_let_and_let_rec_bindings
@@ -276,14 +273,14 @@ module rec Expr : sig
         -> Expr.t
         -> Expr.t)
       -> t
-         
-    module Toplevel_only : sig 
+
+    module Toplevel_only : sig
       val map : (t -> t) -> (Named.t -> Named.t) -> t -> t
 
       val map_expr : (t -> t) -> t -> t
 
       val map_named : (Named.t -> Named.t) -> t -> t
-  
+
       val map_sets_of_closures
          : t
         -> f:(Set_of_closures.t -> Set_of_closures.t)
@@ -334,7 +331,7 @@ end and Named : sig
 
   module Iterators : sig
     val iter : (Expr.t -> unit) -> (t -> unit) -> t -> unit
-    
+
     val iter_named : (t -> unit) -> t -> unit
 
     module Toplevel_only : sig

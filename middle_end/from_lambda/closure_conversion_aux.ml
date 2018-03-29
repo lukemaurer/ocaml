@@ -19,7 +19,6 @@
 module Env = struct
   type t = {
     variables : Variable.t Ident.Map.t;
-    mutable_variables : Mutable_variable.t Ident.Map.t;
     globals : Symbol.t Numbers.Int.Map.t;
     at_toplevel : bool;
     administrative_redexes : (Ident.t list * Ilambda.t) Continuation.Map.t;
@@ -27,7 +26,6 @@ module Env = struct
 
   let empty = {
     variables = Ident.Map.empty;
-    mutable_variables = Ident.Map.empty;
     globals = Numbers.Int.Map.empty;
     at_toplevel = true;
     administrative_redexes = Continuation.Map.empty;
@@ -70,18 +68,6 @@ module Env = struct
 
   let find_simples t ids =
     List.map (fun id -> Simple.var (find_var t id)) ids
-
-  let add_mutable_var t id mutable_var =
-    { t with
-      mutable_variables = Ident.Map.add id mutable_var t.mutable_variables;
-    }
-
-  let find_mutable_var t id =
-    try Ident.Map.find id t.mutable_variables
-    with Not_found ->
-      Misc.fatal_errorf "Closure_conversion.Env.find_mutable_var: %s@ %s"
-        (Ident.unique_name id)
-        (Printexc.raw_backtrace_to_string (Printexc.get_callstack 42))
 
   let add_global t pos symbol =
     { t with globals = Numbers.Int.Map.add pos symbol t.globals }

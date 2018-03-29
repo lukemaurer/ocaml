@@ -230,11 +230,6 @@ module Apply = struct
       && specialise1 = specialise2
 end
 
-type assign = {
-  being_assigned : Mutable_variable.t;
-  new_value : Simple.t;
-}
-
 module Free_var = struct
   type t = {
     var : Variable.t;
@@ -427,7 +422,6 @@ type mutable_or_immutable =
 module rec Expr : sig
   type t =
     | Let of Let.t
-    | Let_mutable of Let_mutable.t
     | Let_cont of Let_cont.t
     | Apply of Apply.t
     | Apply_cont of Continuation.t * Trap_action.t option * Simple.t list
@@ -614,7 +608,6 @@ end = struct
         end
       | Switch (var, _) -> free_name_in_term var
       | Invalid _ -> ()
-      | Let_mutable _ -> Misc.fatal_error "Let_mutable is being removed"
     in
     aux tree;
     if all_used_names then !free
@@ -649,8 +642,7 @@ end = struct
 
   let rec free_continuations (t : t) =
     match t with
-    | Let { body; _ }
-    | Let_mutable { body; _ } ->
+    | Let { body; _ } ->
       (* No continuations occur in a [Named.t] except inside closures---and
          closures do not have free continuations.  As such we don't need
          to traverse the defining expression of the let. *)
@@ -767,7 +759,6 @@ end = struct
         match t with
         | Apply _ | Apply_cont _ | Switch _ -> ()
         | Let _ -> assert false
-        | Let_mutable { body; _ } -> aux body
         | Let_cont { body; handlers; _ } ->
           aux body;
           begin match handlers with
@@ -788,7 +779,7 @@ end = struct
     and aux_named (named : Named.t) =
       f_named named;
       match named with
-      | Simple _ | Read_mutable _ | Prim _ | Assign _ -> ()
+      | Simple _ | Prim _ -> ()
       | Set_of_closures { function_decls = funcs; _; } ->
         if not toplevel then begin
           Closure_id.Map.iter (fun _ (decl : Function_declaration.t) ->
@@ -803,7 +794,6 @@ end = struct
   let equal ~equal_type t1 t2 =
     match t1, t2 with
     | Let let1, Let let2 -> Let.equal ~equal_type let1 let2
-    | Let_mutable lm1, Let_mutable lm2 -> Let_mutable.equal ~equal_type lm1 lm2
     | Let_cont lc1, Let_cont lc2 -> Let_cont.equal ~equal_type lc1 lc2
     | Apply apply1, Apply apply2 -> Apply.equal apply1 apply2
     | Apply_cont (cont1, trap1, args1), Apply_cont (cont2, trap2, args2) ->
@@ -814,7 +804,7 @@ end = struct
       Name.equal name1 name2 && Switch.equal switch1 switch2
     | Invalid invalid1, Invalid invalid2 ->
       Pervasives.compare invalid1 invalid2 = 0
-    | (Let _ | Let_mutable _ | Let_cont _ | Apply _ | Apply_cont _
+    | (Let _ | Let_cont _ | Apply _ | Apply_cont _
         | Switch _ | Invalid _), _ -> false
 
   let rec print_with_cache ~cache ppf (t : t) =
@@ -861,12 +851,6 @@ end = struct
         (Named.print_with_cache ~cache) arg;
       let expr = letbody body in
       fprintf ppf ")@]@ %a)@]" print expr
-    | Let_mutable { var; initial_value; body; contents_type; } ->
-      fprintf ppf "@[<2>(let_mutable%a@ @[<2>%a@ %a@]@ %a)@]"
-        (Flambda_type.print_with_cache ~cache) contents_type
-        Mutable_variable.print var
-        Simple.print initial_value
-        print body
     | Switch (scrutinee, sw) ->
       fprintf ppf
         "@[<v 1>(%sswitch%s %a@ @[<v 0>%a@])@]"
@@ -931,8 +915,6 @@ end and Named : sig
     | Simple of Simple.t
     | Prim of Flambda_primitive.t * Debuginfo.t
     | Set_of_closures of Set_of_closures.t
-    | Assign of assign
-    | Read_mutable of Mutable_variable.t
 
   val free_names
      : ?ignore_uses_in_project_var:unit
@@ -983,9 +965,6 @@ end = struct
       in
       begin match t with
       | Simple simple -> free_names_in_term (Simple.free_names simple)
-      | Read_mutable _ -> ()
-      | Assign { being_assigned = _; new_value; } ->
-        free_names_in_term (Simple.free_names new_value)
       | Set_of_closures set ->
         free_names (Set_of_closures.free_names set)
       | Prim (Unary (Project_var _, x0), _dbg) ->
@@ -1026,12 +1005,6 @@ end = struct
       fprintf ppf "@[<2>(%a%a)@]"
         Flambda_primitive.print prim
         Debuginfo.print_or_elide dbg
-    | Read_mutable mut_var ->
-      fprintf ppf "Read_mut(%a)" Mutable_variable.print mut_var
-    | Assign { being_assigned; new_value; } ->
-      fprintf ppf "@[<2>(assign@ %a@ %a)@]"
-        Mutable_variable.print being_assigned
-        Simple.print new_value
 
   let print ppf t = print_with_cache ~cache:(Printing_cache.create ()) ppf t
 
@@ -1083,13 +1056,7 @@ end = struct
       Flambda_primitive.equal prim1 prim2 && Debuginfo.equal dbg1 dbg2
     | Set_of_closures set1, Set_of_closures set2 ->
       Set_of_closures.equal ~equal_type set1 set2
-    | Assign { being_assigned = being_assigned1; new_value = new_value1; },
-        Assign { being_assigned = being_assigned2; new_value = new_value2; } ->
-      Mutable_variable.equal being_assigned1 being_assigned2
-        && Simple.equal new_value1 new_value2
-    | Read_mutable mut1, Read_mutable mut2 ->
-      Mutable_variable.equal mut1 mut2
-    | (Simple _ | Prim _ | Set_of_closures _ | Assign _ | Read_mutable _), _ ->
+    | (Simple _ | Prim _ | Set_of_closures _), _ ->
       false
 end and Let : sig
   type t = {
@@ -1150,36 +1117,6 @@ end = struct
         free_names_of_defining_expr2
       && Name_occurrences.equal free_names_of_body1
         free_names_of_body2
-end and Let_mutable : sig
-  type t = {
-    var : Mutable_variable.t;
-    initial_value : Simple.t;
-    contents_type : Flambda_type.t;
-    body : Expr.t;
-  }
-  val equal
-     : equal_type:(Flambda_type.t -> Flambda_type.t -> bool)
-    -> t
-    -> t
-    -> bool
-end = struct
-  include Let_mutable
-
-  let equal ~equal_type
-        { var = var1;
-          initial_value = initial_value1;
-          contents_type = contents_type1;
-          body = body1;
-        }
-        { var = var2;
-          initial_value = initial_value2;
-          contents_type = contents_type2;
-          body = body2;
-        } =
-    Mutable_variable.equal var1 var2
-      && Simple.equal initial_value1 initial_value2
-      && equal_type contents_type1 contents_type2
-      && Expr.equal ~equal_type body1 body2
 end and Let_cont : sig
   type t = {
     body : Expr.t;

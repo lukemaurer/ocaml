@@ -98,7 +98,7 @@ type program =
   }
 
 let rec print_function ppf
-      ({ continuation_param; kind; params; body; attr; }
+    ({ continuation_param; kind; params; body; attr; exn_continuation_param; }
        : function_declaration) =
   let fprintf = Format.fprintf in
   let pr_params ppf params =
@@ -114,8 +114,9 @@ let rec print_function ppf
         params;
       fprintf ppf ")"
   in
-  fprintf ppf "@[<2>(function<%a>%a@ %a%a)@]"
+  fprintf ppf "@[<2>(function<%a|%a>%a@ %a%a)@]"
     Continuation.print continuation_param
+    Continuation.print exn_continuation_param
     pr_params params
     Printlambda.function_attribute attr lam body
 
@@ -124,9 +125,10 @@ and print_named ppf (named : named) =
   match named with
   | Var id -> Ident.print ppf id
   | Const cst -> Printlambda.structured_constant ppf cst
-  | Prim { prim; args = largs; _ } ->
-    fprintf ppf "@[<2>(%a %a)@]" Printlambda.primitive prim
+  | Prim { prim; args = largs; exception_continuation; _ } ->
+    fprintf ppf "@[<2>(%a %a [catch %a])@]" Printlambda.primitive prim
       Ident.print_list largs
+      Continuation.print exception_continuation
   | Assign { being_assigned; new_value; } ->
     fprintf ppf "@[<2>(assign@ %a@ %a)@]" Ident.print being_assigned
       Ident.print new_value
@@ -201,7 +203,7 @@ and lam ppf (t : t) =
       match t with
       | Let_cont let_cont ->
         gather_let_conts (let_cont :: let_conts) let_cont.body
-      | body -> List.rev let_conts, body
+      | body -> let_conts, body
     in
     let let_conts, body = gather_let_conts [] t in
     let print_let_cont ppf { name; administrative; params; recursive; handler;

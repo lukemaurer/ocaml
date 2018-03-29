@@ -19,7 +19,6 @@
 module F0 = Flambda0
 module K = Flambda_kind
 
-type assign = F0.assign
 type mutable_or_immutable = Flambda0.mutable_or_immutable
 type inline_attribute = F0.inline_attribute =
   | Always_inline
@@ -35,7 +34,6 @@ type recursive = F0.recursive
 module Free_var = F0.Free_var
 module Let = F0.Let
 module Let_cont = F0.Let_cont
-module Let_mutable = F0.Let_mutable
 module Switch = F0.Switch
 module Trap_action = F0.Trap_action
 module With_free_names = F0.With_free_names
@@ -177,7 +175,7 @@ module rec Expr : sig
       -> for_last_body:(t -> unit)
       -> for_each_let:(t -> unit)
       -> unit
-    module Toplevel_only : sig 
+    module Toplevel_only : sig
       val iter : (t -> unit) -> (Named.t -> unit) -> t -> unit
       val iter_all_immutable_let_and_let_rec_bindings
          : t
@@ -219,7 +217,7 @@ module rec Expr : sig
         -> t
         -> t)
       -> t
-    module Toplevel_only : sig 
+    module Toplevel_only : sig
       val map : (t -> t) -> (Named.t -> Named.t) -> t -> t
       val map_expr : (t -> t) -> t -> t
       val map_named : (Named.t -> Named.t) -> t -> t
@@ -272,7 +270,6 @@ end = struct
     | Let { defining_expr; body; _ } ->
       Named.no_effects_or_coeffects defining_expr
         && no_effects_or_coeffects body
-    | Let_mutable { body; _ } -> no_effects_or_coeffects body
     | Let_cont { body; handlers; } ->
       no_effects_or_coeffects body
         && Let_cont_handlers.no_effects_or_coeffects handlers
@@ -284,7 +281,6 @@ end = struct
   let description_of_toplevel_node (expr : Expr.t) =
     match expr with
     | Let { var; _ } -> Format.asprintf "let %a" Variable.print var
-    | Let_mutable _ -> "let_mutable"
     | Let_cont  _ -> "let_cont"
     | Apply _ -> "apply"
     | Apply_cont  _ -> "apply_cont"
@@ -363,7 +359,6 @@ end = struct
       | Let { defining_expr; body; _ } ->
         f_named defining_expr;
         f body
-      | Let_mutable { body; _ } -> f body
       | Let_cont { body; handlers =
           Non_recursive { handler = { handler; _ }; _ } } ->
         f body;
@@ -385,7 +380,7 @@ end = struct
     let iter_sets_of_closures f t =
       iter_named (function
           | Set_of_closures clos -> f clos
-          | Simple _ | Read_mutable _ | Assign _ | Prim _ -> ())
+          | Simple _ | Prim _ -> ())
         t
 
     let iter_function_bodies t ~f =
@@ -425,12 +420,6 @@ end = struct
             match tree with
             | Apply _ | Apply_cont _ | Switch _ | Invalid _ -> tree
             | Let _ -> assert false
-            | Let_mutable mutable_let ->
-              let new_body = aux mutable_let.body in
-              if new_body == mutable_let.body then
-                tree
-              else
-                Let_mutable { mutable_let with body = new_body }
             (* CR-soon mshinwell: There's too much code duplication here with
                [map_subexpressions]. *)
             | Let_cont { body; handlers; } ->
@@ -473,7 +462,7 @@ end = struct
       and aux_named (id : Variable.t) _kind (named : Named.t) =
         let named : Named.t =
           match named with
-          | Simple _ | Read_mutable _ | Assign _ | Prim _ -> named
+          | Simple _ | Prim _ -> named
           | Set_of_closures ({ function_decls; free_vars;
               direct_call_surrogates }) ->
             if toplevel then named
@@ -527,12 +516,6 @@ end = struct
           tree
         else
           create_let var kind new_named new_body
-      | Let_mutable mutable_let ->
-        let new_body = f mutable_let.body in
-        if new_body == mutable_let.body then
-          tree
-        else
-          Let_mutable { mutable_let with body = new_body }
       | Let_cont { body; handlers; } ->
         let new_body = f body in
         match handlers with
@@ -577,7 +560,7 @@ end = struct
               named
             else
               Simple new_simple
-          | (Set_of_closures _ | Read_mutable _ | Prim _ | Assign _)
+          | (Set_of_closures _ | Prim _)
               as named ->
             named)
         tree
@@ -600,7 +583,7 @@ end = struct
             let new_set_of_closures = f set_of_closures in
             if new_set_of_closures == set_of_closures then named
             else Set_of_closures new_set_of_closures
-          | (Simple _ | Assign _ | Prim _ | Read_mutable _) as named -> named)
+          | (Simple _ | Prim _) as named -> named)
         tree
 
     let map_function_bodies ?ignore_stubs t ~f =
@@ -625,7 +608,7 @@ end = struct
               let new_set_of_closures = f set_of_closures in
               if new_set_of_closures == set_of_closures then named
               else Set_of_closures new_set_of_closures
-            | (Simple _ | Read_mutable _ | Prim _ | Assign _) as named -> named)
+            | (Simple _ | Prim _) as named -> named)
           tree
       end
   end
@@ -700,9 +683,6 @@ end = struct
       (* Note that this does not have to traverse subexpressions; the call to
          [map_toplevel] below will deal with that. *)
       match expr with
-      | Let_mutable mutable_let ->
-        let initial_value = Simple.map_var mutable_let.initial_value ~f:sb in
-        Let_mutable { mutable_let with initial_value }
       | Apply apply ->
         Apply (Apply.rename_variables apply ~f:sb)
       | Switch (cond, sw) ->
@@ -732,10 +712,6 @@ end = struct
         let simple' = Simple.map_var simple ~f:sb in
         if simple == simple' then named
         else Simple simple'
-      | Read_mutable _ -> named
-      | Assign { being_assigned; new_value; } ->
-        let new_value = Simple.map_var new_value ~f:sb in
-        Assign { being_assigned; new_value; }
       | Set_of_closures set_of_closures ->
         let function_decls =
           Function_declarations.map_parameter_types
@@ -915,7 +891,7 @@ end = struct
           use exn_handler
         | Switch (_, switch) ->
           Switch.iter switch ~f:(fun _value cont -> use cont)
-        | Let _ | Let_mutable _ | Let_cont _ | Invalid _ -> ())
+        | Let _ | Let_cont _ | Invalid _ -> ())
       (fun _named -> ())
       expr;
     Continuation.Tbl.to_map counts
@@ -960,30 +936,6 @@ end = struct
         end;
         let env = E.add_variable env var kind in
         loop env body
-      | Let_mutable _ ->
-        Misc.fatal_errorf "Let_mutable not yet supported"
-(* { var; initial_value; body; contents_type; } ->
-        let initial_value_kind = E.kind_of_simple env initial_value in
-        let contents_kind =
-          Flambda_type.kind ~type_of_name:
-            (fun ?local_env (id : Flambda_type.Name_or_export_id.t) ->
-              ignore local_env;
-              match id with
-              | Name name -> E.type_of_name_option env name
-              | Export_id _ -> None)
-            contents_type
-        in
-        if not (K.equal initial_value_kind contents_kind) then begin
-          Misc.fatal_errorf "Initial value of [Let_mutable] term has kind %a \
-              whereas %a was expected: %a"
-            K.print initial_value_kind
-            Flambda_type.print contents_type
-            print t
-        end;
-        let contents_ty = Flambda_type.unknown contents_kind in
-        let env = E.add_mutable_variable env var contents_ty in
-        loop env body
-*)
       | Let_cont { body; handlers; } ->
         let handler_stack = E.Continuation_stack.var () in
         let env =
@@ -1236,17 +1188,15 @@ end = struct
     | Simple _ -> true
     | Prim (prim, _) -> Flambda_primitive.no_effects_or_coeffects prim
     | Set_of_closures _ -> true
-    | Assign _ | Read_mutable _ -> false
 
   let at_most_generative_effects (t : t) =
     match t with
     | Simple _ -> true
     | Prim (prim, _) -> Flambda_primitive.at_most_generative_effects prim
     | Set_of_closures _ -> true
-    | Assign _ | Read_mutable _ -> false
 
   let dummy_value (kind : K.t) : t =
-    let simple = 
+    let simple =
       match kind with
       | Value | Phantom (_, Value) -> Simple.const_zero
       | Naked_number Naked_immediate
@@ -1386,22 +1336,6 @@ end = struct
       match t with
       | Simple simple ->
         Singleton (E.kind_of_simple env simple)
-      | Read_mutable mut_var ->
-        Singleton (E.kind_of_mutable_variable env mut_var)
-      | Assign { being_assigned; new_value; } ->
-        let being_assigned_kind =
-          E.kind_of_mutable_variable env being_assigned
-        in
-        let new_value_kind = E.kind_of_simple env new_value in
-        if not (K.equal new_value_kind being_assigned_kind) then begin
-          Misc.fatal_errorf "Cannot put value %a of kind %a into mutable \
-              variable %a with contents kind %a"
-            Simple.print new_value
-            K.print new_value_kind
-            Mutable_variable.print being_assigned
-            K.print being_assigned_kind
-        end;
-        Singleton (K.unit ())
       | Set_of_closures set_of_closures ->
         Set_of_closures.invariant env set_of_closures;
         Singleton (K.fabricated ())

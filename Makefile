@@ -245,6 +245,8 @@ ASMCOMP=\
 #  asmcomp/backend_primitives_from_lambda.cmo \
 
 MIDDLE_END_ANALYSIS=\
+  middle_end/analysis/relation.cmo \
+  middle_end/analysis/dominator_tree.cmo
   # middle_end/analysis/alias_analysis.cmo \
   # middle_end/analysis/extract_projections.cmo \
   # middle_end/analysis/find_recursive_functions.cmo \

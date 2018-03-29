@@ -36,6 +36,494 @@ type t = {
     (Symbol.t * Flambda_static0.Static_part.t) list;
 }
 
+let assigning_conts ~root_node (fun_decl : Ilambda.function_declaration)
+  : Continuation.Set.t Ident.Map.t =
+  let combine_maps map1 map2 =
+    (* The map should only be added to at a definition site, so there should be
+       no duplicates *)
+    Continuation.Map.union (fun _ _ _ -> assert false) map1 map2
+  in
+  let combine_assigned = Ident.Set.union in
+  let combine_pairs (m1, a1) (m2, a2) = (combine_maps m1 m2, combine_assigned a1 a2) in
+
+  let rec go (body : Ilambda.t) : Ident.Set.t Continuation.Map.t * Ident.Set.t =
+    match body with
+    | Let (_, named, body) -> combine_pairs (go_named named) (go body)
+    | Let_mutable { id; body; _ } ->
+      let map, assigned = go body in
+      (* This counts as an assignment *)
+      map, Ident.Set.add id assigned
+    | Let_rec (_, body) -> go body (* only interested in this function *)
+    | Let_cont { name; handler; body } ->
+      let handler_map, handler_assigned = go handler in
+      let body_map, body_assigned = go body in
+      let map =
+        combine_maps body_map (Continuation.Map.add name handler_assigned handler_map)
+      in
+      map, body_assigned
+    | Event (body, _) -> go body
+    | Apply _ | Apply_cont _ | Switch _ -> Continuation.Map.empty, Ident.Set.empty
+  and go_named (named : Ilambda.named) = match named with
+    | Assign { being_assigned; _ } ->
+      Continuation.Map.empty, Ident.Set.singleton being_assigned
+    | Var _ | Const _ | Prim _ ->
+      Continuation.Map.empty, Ident.Set.empty
+  in
+  let map, assigned = go fun_decl.body in
+  let map = Continuation.Map.add root_node assigned map in
+  let module Rel = Relation.Make(Continuation)(Ident) in
+  Rel.inverse map
+
+(* In CFG language, a phi-node is a variable with a map from each predecessor to a value
+   for the variable. For us, a phi-node is a new argument to be added to a continuation,
+   with a map from each continuation that invokes it to the value it should pass.
+
+   (See Maurer, L. (2018). "The Design of Intermediate Languages in Optimizing
+   Compilers.")
+*)
+module Phi_node = struct
+  type t = Ident.t ref Continuation.Map.t
+end
+
+module Phi_node_map = struct
+  type t = (Ident.t ref * Phi_node.t) list Continuation.Map.t
+
+  let print ppf t =
+    Continuation.Map.print (Format.pp_print_list ?pp_sep:None (fun ppf (v, map) ->
+      Format.fprintf ppf "%a <-- %a"
+        Ident.print !v
+        (Continuation.Map.print (fun ppf v -> Ident.print ppf !v)) map
+    )) ppf t
+
+  let _ = print
+end
+
+let iter_let_cont f (term : Ilambda.t) =
+  let rec go (term : Ilambda.t) =
+    match term with
+    | Let (_, _, body) -> go body
+    | Let_mutable { body; _ } -> go body
+    | Let_rec (_, body) -> go body
+    | Let_cont let_cont -> f let_cont; go let_cont.handler; go let_cont.body
+    | Event (body, _) -> go body
+    | Apply _ | Apply_cont _ | Switch _ -> ()
+  in
+  go term
+
+(* let make_ast_match_dom_tree (fun_decl : Ilambda.function_declaration) dom_tree =
+ *   Format.eprintf "BEFORE:@.%a@." Ilambda.print_function fun_decl;
+ *   let cont_decls : Ilambda.let_cont Continuation.Tbl.t = Continuation.Tbl.create 10 in
+ *   let dummy_ident = Ident.create "*deleted body*" in
+ *   let dummy_body = Ilambda.Switch (dummy_ident, {
+ *     numconsts = 0; consts = []; failaction = None
+ *   }) in
+ *   iter_let_cont (fun let_cont ->
+ *     Continuation.Tbl.add cont_decls let_cont.name
+ *       ({ let_cont with body = dummy_body } : Ilambda.let_cont)
+ *   ) fun_decl.body;
+ *
+ *   Format.eprintf "Continuations:@.%a@.Dom tree:@.%a@."
+ *     Continuation.Set.print
+ *     (cont_decls |> Continuation.Tbl.to_map |> Continuation.Map.keys)
+ *     Dominator_tree.print dom_tree;
+ *
+ *   let rec rewrite (term : Ilambda.t) : Ilambda.t =
+ *     match term with
+ *     | Let (id, named, body) ->
+ *       Let (id, named, rewrite body)
+ *     | Let_mutable let_mutable ->
+ *       Let_mutable { let_mutable with body = rewrite let_mutable.body }
+ *     | Let_rec (decls, body) ->
+ *       Let_rec (decls, rewrite body)
+ *     | Let_cont { body; _ } ->
+ *       rewrite body
+ *     | Event (body, event) ->
+ *       Event (rewrite body, event)
+ *     | Apply _ | Apply_cont _ | Switch _ ->
+ *       term
+ *   and rewrite_handler k term : Ilambda.t =
+ *     let term = rewrite term in
+ *     let children = Dominator_tree.children dom_tree k |> Continuation.Set.elements in
+ *     let child_decls = List.fold_left (fun decls cont ->
+ *       match Continuation.Tbl.find_opt cont_decls cont with
+ *       | Some decl -> decl :: decls
+ *       | None -> decls) [] children
+ *     in
+ *     List.fold_left (fun body (decl : Ilambda.let_cont) ->
+ *       Ilambda.Let_cont
+ *         { decl with body; handler = rewrite_handler decl.name decl.handler }
+ *     ) term child_decls
+ *   in
+ *   let body = rewrite_handler (Dominator_tree.root_node dom_tree) fun_decl.body in
+ *   (fun ans -> Format.eprintf "AFTAIR:@.%a@." Ilambda.print_function ans; ans) @@
+ *   ({ fun_decl with body } : Ilambda.function_declaration)
+ * ;; *)
+
+let place_phi_nodes
+      ~(dom_tree : Dominator_tree.t)
+      ~(assigning_conts : Continuation.Set.t Ident.Map.t)
+      (fun_decl : Ilambda.function_declaration)
+  : Phi_node_map.t =
+    (* Sadly, we can't use the iterated dominance frontier, at least not trivially,
+       because we need a phi-node in either {i two} situations: (1) the usual one, a
+       join point where something can take multiple values, and (2) where otherwise the
+       variable would go out of scope. SSA has a flat scope, so it avoids the issue that
+       way. We {i could} fix this by rearranging the CPS term so that its structure
+       matches the dominator tree (that this is possible is a corollary of the
+       interderivability of CPS and SSA; in particular, CPS->SSA uses the dominator tree,
+       so we could translate to SSA and back (!)), but putting everything in just the
+       right place would be hard.
+
+       For the moment, we punt by just putting a phi-node anywhere a mutable variable is
+       in scope. *)
+    (* (* Briggs et al.: "Place a phi-node for [v] in the iterated dominance frontier
+     *    of [A(v)]." *)
+     * Ident.Map.fold (fun v ks phi_nodes ->
+     *   (* XX lmaurer: This almost certainly won't be fast enough in real life; real
+     *      implementations don't construct the IDF explicitly. *)
+     *   let idf : Continuation.Set.t =
+     *     Dominator_tree.iterated_dominance_frontier dom_tree ks
+     *   in
+     *   Format.eprintf "Iterated dominance frontier of %a:@.%a@."
+     *     Continuation.Set.print ks
+     *     Continuation.Set.print idf;
+     *   Continuation.Set.fold (fun k phi_nodes ->
+     *     if is_exit_node k
+     *     then phi_nodes
+     *     else
+     *       (* Each phi-node starts out as v <- (v, ..., v) *)
+     *       let new_phi_node =
+     *         let predecessors = Dominator_tree.predecessors dom_tree k in
+     *         Continuation.Set.fold (fun pred phi_node ->
+     *           Continuation.Map.add pred (ref v) phi_node
+     *         ) predecessors Continuation.Map.empty
+     *       in
+     *       Continuation.Map.update k (function
+     *         | Some phi_nodes_for_k -> Some ((ref v, new_phi_node) :: phi_nodes_for_k)
+     *         | None -> Some [(ref v, new_phi_node)]
+     *       ) phi_nodes
+     *   ) idf phi_nodes
+     * ) assigning Continuation.Map.empty *)
+  let _ = assigning_conts in
+
+  let conts_in_scope : Continuation.Set.t Ident.Tbl.t =
+    Ident.Tbl.create 10
+  in
+
+  (* Return continuations defined in subtree, recording the result at
+     each [Let_mutable] *)
+  let rec go (body : Ilambda.t) : Continuation.Set.t =
+    match body with
+    | Let (_, _, body) -> go body
+    | Let_mutable { id; body; _ } ->
+      let conts = go body in
+      Ident.Tbl.add conts_in_scope id conts;
+      conts
+    | Let_rec (_, body) -> go body (* only interested in this function *)
+    | Let_cont { name; handler; body } ->
+      let handler_conts = go handler in
+      let body_conts = go body in
+      Continuation.Set.add name (Continuation.Set.union handler_conts body_conts)
+    | Event (body, _) -> go body
+    | Apply _ | Apply_cont _ | Switch _ -> Continuation.Set.empty
+  in
+  ignore (go fun_decl.body : Continuation.Set.t);
+  let ids_for_cont : Ident.Set.t Continuation.Map.t =
+    let module Rel = Relation.Make(Ident)(Continuation) in
+    Rel.inverse (conts_in_scope |> Ident.Tbl.to_map)
+  in
+
+  Continuation.Map.mapi (fun k ids_in_scope ->
+    List.map (fun v ->
+      (* Each phi-node starts out as v <- (v, ..., v) *)
+      let new_phi_node =
+        let predecessors = Dominator_tree.predecessors dom_tree k in
+        Continuation.Set.fold (fun pred phi_node ->
+          Continuation.Map.add pred (ref v) phi_node
+        ) predecessors Continuation.Map.empty
+      in
+      (ref v, new_phi_node)
+    ) (ids_in_scope |> Ident.Set.elements)
+  ) ids_for_cont
+
+let remove_mutable_variables (fun_decl : Ilambda.function_declaration)
+  : Ilambda.function_declaration =
+  let is_exit_node k =
+    Continuation.equal k fun_decl.continuation_param
+    || Continuation.equal k fun_decl.exn_continuation_param
+  in
+  (* Adapted from: Briggs, Cooper, Harvey, and Simpson (1998). "Practical improvements to
+     the Construction and Destruction of Static Single Assignment Form." *)
+  let dom_tree = Dominator_tree.of_function_declaration fun_decl in
+  (* Format.eprintf "Dominance tree:@.%a@.Dominance frontiers:@.%a@."
+   *   Dominator_tree.print dom_tree
+   *   Dominator_tree.print_dominance_frontiers dom_tree; *)
+  (* let fun_decl = make_ast_match_dom_tree fun_decl dom_tree in *)
+  let root_node = Dominator_tree.root_node dom_tree in
+  (* Briggs et al.: "[A(v) <- {blocks containing an assignment to v}]" *)
+  let assigning : Continuation.Set.t Ident.Map.t = assigning_conts ~root_node fun_decl in
+  (* Format.eprintf "Continuations that assign:@.%a@."
+   *   (Ident.Map.print Continuation.Set.print) assigning; *)
+  let phi_nodes : Phi_node_map.t =
+    place_phi_nodes ~assigning_conts:assigning ~dom_tree fun_decl
+  in
+  (* Format.eprintf "Placing phi-nodes in continuations:@.%a@."
+   *   Continuation.Set.print (Continuation.Map.keys phi_nodes); *)
+  let find_phi_nodes k =
+    match Continuation.Map.find_opt k phi_nodes with
+    | Some nodes -> nodes
+    | None -> []
+  in
+
+  (* The paper uses a list called [counters] to keep track of the next fresh name to
+     assign to each variable. We have our own way of freshening, so we store the fresh
+     names directly in [stacks] instead of messing about with integers. *)
+  let stacks : Ident.t list ref Ident.Map.t = Ident.Map.map (fun _ -> ref []) assigning in
+  let push v_new v =
+    let stack = Ident.Map.find v stacks in
+    stack := v_new :: !stack
+  in
+  let pop v =
+    let stack = Ident.Map.find v stacks in
+    match !stack with
+    | _ :: tail -> stack := tail
+    | [] -> assert false
+  in
+  let top v =
+    let stack = Ident.Map.find v stacks in
+    match !stack with
+    | top :: _ -> top
+    | [] -> assert false
+  in
+
+  (* Rename the body and populate the phi-nodes. The name [search] is from the paper.
+     In lieu of in-place modification, builds a map from each continuation name to the
+     new version of it (where letcont bodies are meaningless). The next pass does the
+     modifications. *)
+  let orig_bodies = Continuation.Tbl.create 10 in
+  Continuation.Tbl.add orig_bodies root_node fun_decl.body;
+  iter_let_cont (fun { name; handler; _ } ->
+    Continuation.Tbl.add orig_bodies name handler
+  ) fun_decl.body;
+  let new_bodies = Continuation.Tbl.create 10 in
+  (* Remember the parameter list of each continuation so we can make stubs. *)
+  let param_lists = Continuation.Tbl.create 10 in
+  Continuation.Tbl.add param_lists root_node [];
+  let rec search k body =
+    let phis = find_phi_nodes k in
+    (* At the end, we're going to pop everything we've pushed, so track it *)
+    let to_pop = ref [] in
+    let push_fresh v =
+      to_pop := v :: !to_pop;
+      let v_new = Ident.rename v in
+      push v_new v;
+      v_new
+    in
+    List.iter (fun (v, _map) -> v := push_fresh !v) phis;
+    (* NOTE: We only need to rewrite {i mutable} variables. *)
+    let rec rewrite (term : Ilambda.t) : Ilambda.t =
+      match term with
+      | Let (id, Prim { prim = Pread_mutable var; _ }, body) ->
+        let var = top var in
+        let body = rewrite body in
+        Let (id, Var var, body)
+      | Let (id, Assign { being_assigned; new_value }, body) ->
+        let new_var = push_fresh being_assigned in
+        Let (new_var, Var new_value,
+             Let (id, Const Lambda.const_unit,
+                  rewrite body))
+      | Let (id, other_named, body) ->
+        Let (id, other_named, rewrite body)
+      | Let_mutable { id; initial_value; body; _ } ->
+        let id = push_fresh id in
+        Let (id, Var initial_value, rewrite body)
+      | Let_rec (decls, body) ->
+        (* Functions don't have free references to mutable variables, so we don't need to
+           rewrite the declarations (hooray!). *)
+        Let_rec (decls, rewrite body)
+      | Let_cont ({ name; params; body; _ } as let_cont) ->
+        Continuation.Tbl.add param_lists name params;
+        (* Handler will be replaced in next pass *)
+        Let_cont { let_cont with body = rewrite body }
+      | Event (body, event) ->
+        Event (rewrite body, event)
+      | Apply _ | Apply_cont _ | Switch _ ->
+        term
+    in
+    let new_body = rewrite body in
+    Continuation.Tbl.add new_bodies k new_body;
+    let succs = Dominator_tree.successors dom_tree k in
+    Continuation.Set.iter (fun succ ->
+      let phis = find_phi_nodes succ in
+      List.iter (fun (_, phi) ->
+        let arg = Continuation.Map.find k phi in
+        (* The node starts out as [v <- phi(v, v, ..., v)], but the first v has been
+           renamed, so use the argument *)
+        arg := top !arg;
+      ) phis
+    ) succs;
+    let children = Dominator_tree.children dom_tree k in
+    Continuation.Set.iter (fun child ->
+      match Continuation.Tbl.find_opt orig_bodies child with
+      | Some body -> search child body
+      | None -> assert (is_exit_node child) (* a parameter, i.e., an exit node *)
+    ) children;
+    List.iter pop !to_pop;
+  in
+  search root_node fun_decl.body;
+  (* CR lmaurer: Could probably do the next two loops at once. *)
+  let rec replace_bodies (term : Ilambda.t) : Ilambda.t =
+    match term with
+    | Let (id, named, body) ->
+      Let (id, named, replace_bodies body)
+    | Let_mutable _ ->
+      assert false (* these should be gone! *)
+    | Let_rec (decls, body) ->
+      Let_rec (decls, replace_bodies body)
+    | Let_cont ({ name; body; _ } as let_cont) ->
+      Let_cont {
+        let_cont with
+        handler = replace_bodies (Continuation.Tbl.find new_bodies name);
+        body = replace_bodies body;
+      }
+    | Event (body, event) ->
+      Event (replace_bodies body, event)
+    | Apply _ | Apply_cont _ | Switch _ ->
+      term
+  in
+  let body = replace_bodies (Continuation.Tbl.find new_bodies root_node) in
+
+  (* Finally, implement the phi-nodes. *)
+  let new_args ~(caller : Continuation.t) cont : Ident.t list =
+    let phis = find_phi_nodes cont in
+    List.map (fun (_, args_by_caller) ->
+      !(Continuation.Map.find caller args_by_caller)
+    ) phis
+  in
+
+  let replace_cont_with_stub ~is_exn_handler ~(caller : Continuation.t)
+        (cont : Continuation.t)
+    : Continuation.t * (Ilambda.t -> Ilambda.t) =
+    (* CR-soon lmaurer: Could be caching stubs by arguments. *)
+    if is_exit_node cont
+    then cont, fun body -> body
+    else
+      match find_phi_nodes cont with
+      | [] -> cont, fun body -> body
+      | phis ->
+        let params =
+          Continuation.Tbl.find param_lists cont
+          |> List.map Ident.rename (* keep everything unique *)
+        in
+        let new_param_vals =
+          List.map (fun (_, args_by_predecessor) ->
+            !(Continuation.Map.find caller args_by_predecessor)
+          ) phis
+        in
+        let new_cont = Continuation.create () in
+        let handler = Ilambda.Apply_cont (cont, None, params @ new_param_vals) in
+        new_cont, fun body ->
+          Let_cont {
+            name = new_cont;
+            recursive = Nonrecursive;
+            administrative = false;
+            params; handler; is_exn_handler; body;
+          }
+  in
+
+  let rec add_phis k (term : Ilambda.t) : Ilambda.t =
+    match term with
+    | Let (id, named, body) ->
+      let named, bind_new_things = add_phis_named k named in
+      bind_new_things (Ilambda.Let (id, named, add_phis k body))
+    | Let_mutable _ ->
+      assert false
+    | Let_rec (decls, body) ->
+      Let_rec (decls, add_phis k body)
+    | Let_cont ({ name; handler; body; params; is_exn_handler; _ } as let_cont) ->
+      let phi_nodes = find_phi_nodes name in
+      let new_params = List.map (fun (v, _) -> !v) phi_nodes in
+      (* If it has phi-nodes, it's no longer an exception handler (and all references to
+         it go through shims that {i are} exception handlers). *)
+      let is_exn_handler = match phi_nodes with
+        | [] -> is_exn_handler
+        | _ :: _ -> false
+      in
+      Let_cont {
+        let_cont with
+        is_exn_handler;
+        params = params @ new_params;
+        handler = add_phis name handler;
+        body = add_phis k body;
+      }
+    | Apply ({ continuation; exn_continuation; _ } as apply) ->
+      let new_cont, bind_cont =
+        replace_cont_with_stub continuation ~caller:k ~is_exn_handler:false
+      in
+      let new_exn_cont, bind_exn_cont =
+        replace_cont_with_stub exn_continuation ~caller:k ~is_exn_handler:true
+      in
+      bind_cont (bind_exn_cont (Apply {
+        apply with
+        continuation = new_cont;
+        exn_continuation = new_exn_cont;
+      }))
+    | Apply_cont (cont, trap, args) ->
+      begin
+        match new_args ~caller:k cont with
+        | [] -> term
+        | new_args -> Apply_cont (cont, trap, args @ new_args)
+      end
+    | Event (body, event) ->
+      Event (add_phis k body, event)
+    | Switch (id, ({ consts; failaction; _ } as switch)) ->
+      let new_consts_and_binders
+        : ((int * Continuation.t) * (Ilambda.t -> Ilambda.t)) list =
+        List.map (fun (tag, cont) ->
+          let new_cont, bind_cont =
+            replace_cont_with_stub cont ~caller:k ~is_exn_handler:false
+          in
+          (tag, new_cont), bind_cont
+        ) consts
+      in
+      let failaction, bind_failaction =
+        match failaction with
+        | Some failaction ->
+          let new_cont, bind_cont =
+            replace_cont_with_stub failaction ~caller:k ~is_exn_handler:false
+          in
+          Some new_cont, bind_cont
+        | None ->
+          None, fun body -> body
+      in
+      let bind_branches body =
+        List.fold_left (fun body (_, bind) -> bind body)
+          body new_consts_and_binders
+      in
+      bind_branches @@
+      bind_failaction @@
+      Ilambda.Switch (id, {
+        switch with failaction; consts = List.map fst new_consts_and_binders
+      })
+  (* Returns both a new named and a function to run on the body to bind any
+     stubs needed *)
+  and add_phis_named k (named : Ilambda.named)
+    : Ilambda.named * (Ilambda.t -> Ilambda.t) =
+    match named with
+    | Prim { prim; args; loc; exception_continuation } ->
+      let exception_continuation, bind_cont =
+        replace_cont_with_stub exception_continuation ~caller:k ~is_exn_handler:true
+      in
+      Prim { prim; args; loc; exception_continuation }, bind_cont
+    | _ ->
+      named, fun body -> body
+  in
+  let body = add_phis root_node body in
+  (fun (ans : Ilambda.function_declaration) ->
+     Format.eprintf "Body without mutables:@.%a@." Ilambda.print_function ans; ans) @@
+  ({ fun_decl with body } : Ilambda.function_declaration)
+;;
+
 (** Generate a wrapper ("stub") function that accepts a tuple argument and
     calls another function with arguments extracted in the obvious
     manner from the tuple. *)
@@ -373,31 +861,19 @@ let rec close t env (lam : Ilambda.t) : Flambda.Expr.t =
         | Simple (Discriminant _)
         | Set_of_closures _ ->
           K.fabricated ()
-        | Assign _ ->
-          K.unit ()
         | Prim (prim, _dbg) ->
           begin match Flambda_primitive.result_kind prim with
           | Singleton kind -> kind
           | Unit -> K.unit ()
           | Never_returns -> K.value ()
           end
-        | Simple (Name (Var _))
-        | Read_mutable _ -> K.value ()
+        | Simple (Name (Var _)) -> K.value ()
       in
       Flambda.Expr.create_let var kind defining_expr body
     in
     close_named t env defining_expr cont
-  | Let_mutable { id; initial_value; contents_kind; body; } ->
-    (* See comment on [Pread_mutable] below. *)
-    let var = Mutable_variable.of_ident id in
-    let initial_value = Env.find_simple env initial_value in
-    let body = close t (Env.add_mutable_var env id var) body in
-    Let_mutable {
-      var;
-      initial_value;
-      body;
-      contents_type = flambda_type_of_lambda_value_kind contents_kind;
-    }
+  | Let_mutable _ ->
+    Misc.fatal_error "[Let_mutable] found in closure conversion"
   | Let_rec (defs, body) ->
     let env =
       List.fold_right (fun (id,  _) env ->
@@ -424,7 +900,8 @@ let rec close t env (lam : Ilambda.t) : Flambda.Expr.t =
                 ~attr ~loc ~free_idents_of_body ~stub
             in
             function_declaration)
-        defs
+        (* CR lmaurer: Do this in a better place? *)
+        (List.map (fun (id, def) -> (id, remove_mutable_variables def)) defs)
     in
     (* We eliminate the [let rec] construction, instead producing a normal
        [Let] that binds a set of closures containing all of the functions.
@@ -591,11 +1068,10 @@ and close_named t env (named : Ilambda.named)
     cont (Simple simple)
   | Const cst ->
     cont (fst (close_const t cst))
-  | Prim { prim = Pread_mutable id; args } ->
+  | Prim { prim = Pread_mutable _; args = _ } ->
     (* All occurrences of mutable variables bound by [Let_mutable] are
        identified by [Prim (Pread_mutable, ...)] in Ilambda. *)
-    assert (args = []);
-    cont (Read_mutable (Env.find_mutable_var env id))
+    Misc.fatal_error "Pread_mutable found in closure conversion"
   | Prim { prim = Pgetglobal id; args = [] } when Ident.is_predef_exn id ->
     let symbol = t.symbol_for_global' id in
     t.imported_symbols <- Symbol.Set.add symbol t.imported_symbols;
@@ -610,11 +1086,8 @@ and close_named t env (named : Ilambda.named)
       ~args:(Env.find_simples env args)
       ~exception_continuation
       (Debuginfo.from_location loc) cont
-  | Assign { being_assigned; new_value; } ->
-    cont (Assign {
-      being_assigned = Env.find_mutable_var env being_assigned;
-      new_value = Env.find_simple env new_value;
-    })
+  | Assign _ ->
+    Misc.fatal_error "Assign found in closure conversion"
 
 (** Perform closure conversion on a set of function declarations, returning a
     set of closures.  (The set will often only contain a single function;

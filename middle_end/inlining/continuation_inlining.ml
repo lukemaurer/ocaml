@@ -41,9 +41,6 @@ let for_toplevel_expression expr r =
         let defining_expr = W.of_defining_expr_of_let let_expr in
         let body = substitute env body in
         W.create_let_reusing_defining_expr var defining_expr body
-      | Let_mutable ({ body; _ } as let_mutable) ->
-        let body = substitute env body in
-        Let_mutable { let_mutable with body; }
       | Let_cont { body; handlers = Non_recursive { name; handler; }; } ->
         let handler =
           { handler with

@@ -59,9 +59,6 @@ module Env : sig
     -> Continuation.t
     -> (Ident.t list * Ilambda.t) option
 
-  val add_mutable_var : t -> Ident.t -> Mutable_variable.t -> t
-  val find_mutable_var : t -> Ident.t -> Mutable_variable.t
-
   val add_global : t -> int -> Symbol.t -> t
   val find_global : t -> int -> Symbol.t
 

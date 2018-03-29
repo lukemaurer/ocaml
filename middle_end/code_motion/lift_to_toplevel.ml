@@ -177,9 +177,7 @@ let rec lift (expr : Flambda.Expr.t) ~to_copy =
          Project_var, and maybe closed sets of closures, directly to toplevel
          here. *)
       | Prim _
-      | Set_of_closures _
-      | Assign _
-      | Read_mutable _ ->
+      | Set_of_closures _ ->
         let name = Format.asprintf "%a" Variable.print var in
         let static_structure, bindings =
           static_structure name ~vars_with_kinds
@@ -253,7 +251,7 @@ let rec lift (expr : Flambda.Expr.t) ~to_copy =
         free_and_bound_conts_handlers.bound
     in
     free_conts, lifted, expr
-  | Let_mutable _ | Apply _ | Apply_cont _ | Switch _ | Invalid _ ->
+  | Apply _ | Apply_cont _ | Switch _ | Invalid _ ->
     let free_conts = Flambda.Expr.free_continuations expr in
     free_conts, [], expr
 

@@ -93,13 +93,6 @@ module Apply : sig
   val print : Format.formatter -> t -> unit
 end
 
-(** The update of a mutable variable.  Mutable variables are distinct from
-    immutable variables in Flambda. *)
-type assign = {
-  being_assigned : Mutable_variable.t;
-  new_value : Simple.t;
-}
-
 module Free_var : sig
   type t = {
     var : Variable.t;
@@ -230,7 +223,6 @@ module rec Expr : sig
   *)
   type t =
     | Let of Let.t
-    | Let_mutable of Let_mutable.t
     | Let_cont of Let_cont.t
     | Apply of Apply.t
     | Apply_cont of Continuation.t * Trap_action.t option * Simple.t list
@@ -330,8 +322,6 @@ end and Named : sig
     | Simple of Simple.t
     | Prim of Flambda_primitive.t * Debuginfo.t
     | Set_of_closures of Set_of_closures.t
-    | Assign of assign
-    | Read_mutable of Mutable_variable.t
 
   (** Compute the free names of the given term. *)
   val free_names
@@ -363,10 +353,12 @@ end and Named : sig
 
   val print : Format.formatter -> t -> unit
 end and Let : sig
-  (* CR-someday mshinwell: Since we lack expression identifiers on every term,
+  (* XCR-someday mshinwell: Since we lack expression identifiers on every term,
      we should probably introduce [Mutable_var] into [named] if we introduce
      more complicated analyses on these in the future.  Alternatively, maybe
-     consider removing mutable variables altogether. *)
+     consider removing mutable variables altogether.
+
+     lmaurer: Getting rid of mutables. *)
 
   type t = private {
     var : Variable.t;
@@ -386,13 +378,6 @@ end and Let : sig
   (** Apply the specified function [f] to the given defining expression of
       a [Let]. *)
   val map_defining_expr : Let.t -> f:(Named.t -> Named.t) -> Expr.t
-end and Let_mutable : sig
-  type t = {
-    var : Mutable_variable.t;
-    initial_value : Simple.t;
-    contents_type : Flambda_type.t;
-    body : Expr.t;
-  }
 end and Let_cont : sig
   (** Values of type [t] represent the definitions of continuations:
         let_cont [name] [args] = [handler] in [body]

@@ -106,3 +106,4 @@ type program =
   }
 
 val print : Format.formatter -> t -> unit
+val print_function : Format.formatter -> function_declaration -> unit

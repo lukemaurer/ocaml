@@ -158,6 +158,6 @@ let run program ~backend:_ =
             for_continuation ~body ~handlers ~unused ~original:expr
               ~recursive:Flambda.Recursive
   *)
-          | Let _ | Let_mutable _ | Apply _ | Apply_cont _ | Switch _
+          | Let _ | Apply _ | Apply_cont _ | Switch _
           | Invalid _ -> expr)
         expr)

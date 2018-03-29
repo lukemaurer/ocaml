@@ -91,7 +91,6 @@ let lambda_smaller' lam ~than:threshold =
     | Let { defining_expr; body; _ } ->
       lambda_named_size defining_expr;
       lambda_size body
-    | Let_mutable { body } -> lambda_size body
     | Switch (_, switch) ->
       size := !size + (5 * Flambda.Switch.num_arms switch)
     | Apply_cont _ -> incr size
@@ -113,8 +112,6 @@ let lambda_smaller' lam ~than:threshold =
     | Simple (Name _) -> ()
     | Simple (Const _) -> incr size
     | Simple (Discriminant _) -> incr size
-    | Assign _ -> incr size
-    | Read_mutable _ -> ()
     | Set_of_closures ({ function_decls; _ }) ->
       Closure_id.Map.iter (fun _ (func_decl : Flambda.Function_declaration.t) ->
           lambda_size func_decl.body)
@@ -257,12 +254,10 @@ module Benefit = struct
   let remove_code_helper b (flam : Flambda.Expr.t) =
     match flam with
     | Switch _ | Apply_cont _ | Apply _ -> b := remove_call !b
-    | Let _ | Let_mutable _ | Let_cont _ | Invalid _ -> ()
+    | Let _ | Let_cont _ | Invalid _ -> ()
 
   let remove_code_helper_named _b (named : Flambda.Named.t) =
     match named with
-    | Assign _ -> ()  (* CR mshinwell: Being removed anyway...
-      b := remove_prim !b *)
     | Set_of_closures _
 (* CR mshinwell: To fix
     | Prim ((Pmakearray _ | Pmakeblock _ | Pduprecord _ | Pbox_float), _, _) ->
@@ -274,7 +269,7 @@ module Benefit = struct
     | Move_within_set_of_closures _
     | Read_symbol_field _ -> b := remove_prim !b
 *)
-    | Simple _ | Read_mutable _  | Prim _ -> ()
+    | Simple _ | Prim _ -> ()
 
   let remove_code lam b =
     let b = ref b in
