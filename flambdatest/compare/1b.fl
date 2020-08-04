@@ -1,4 +1,4 @@
-let code g (y) myclosure -> k2 : val = cont k2 (y)
+let code g (y) myclosure -> k2 * e2 : val = cont k2 (y)
 and symbol G = closure g
 in
 let symbol C = Block 0 (G) in

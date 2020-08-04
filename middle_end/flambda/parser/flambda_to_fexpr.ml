@@ -464,7 +464,7 @@ and dynamic_let_expr env vars (defining_expr : Flambda.Named.t) body
     Misc.fatal_error "Mismatched vars vs. values";
   let bindings =
     List.map2 (fun var defining_expr ->
-      { Fexpr.var = Some var; kind = None; defining_expr }
+      { Fexpr.var; kind = None; defining_expr }
     ) vars defining_exprs in
   Let { bindings; closure_elements; body }
 and static_let_expr env bound_symbols defining_expr body : Fexpr.expr =
@@ -572,9 +572,7 @@ and static_let_expr env bound_symbols defining_expr body : Fexpr.expr =
                 let body = expr env body in
                 (* CR-someday lmaurer: Omit exn_cont, closure_var if
                    not used *)
-                { params; ret_cont; exn_cont = Some exn_cont;
-                  closure_var = Some closure_var; body
-                }
+                { params; ret_cont; exn_cont; closure_var; body }
               )
           in
           Present params_and_body
