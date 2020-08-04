@@ -1203,6 +1203,7 @@ and codes env (code1 : Code.t) (code2 : Code.t) =
     (Code.params_and_body code2, Code.newer_version_of code2)
   |> Comparison.map ~f:(fun (params_and_body, newer_version_of) ->
       code1
+      |> Code.with_code_id (Code.code_id code2)
       |> Code.with_params_and_body params_and_body
       |> Code.with_newer_version_of newer_version_of)
   |> Comparison.add_condition
