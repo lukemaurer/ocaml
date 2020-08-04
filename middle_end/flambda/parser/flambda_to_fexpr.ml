@@ -141,8 +141,7 @@ end = struct
     type fexpr_id = Fexpr.code_id
 
     let desc = "code id"
-    let name v =
-      Code_id.code_symbol v |> Symbol.linkage_name |> Linkage_name.to_string
+    let name v = Code_id.name v
     let mk_fexpr_id name = name |> nowhere
   end)
 
@@ -151,7 +150,7 @@ end = struct
     type fexpr_id = Fexpr.closure_id
 
     let desc = "closure id"
-    let name v = Variable.raw_name (v |> Closure_id.unwrap)
+    let name v = Closure_id.name v
     let mk_fexpr_id name = name |> nowhere
   end)
 

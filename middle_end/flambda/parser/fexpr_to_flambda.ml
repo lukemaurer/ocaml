@@ -133,7 +133,7 @@ let declare_symbol (env:env) { Fexpr.txt = name; loc } =
       name Lambda.print_scoped_location loc
   else
     let symbol =
-      Symbol.create
+      Symbol.unsafe_create
         (Compilation_unit.get_current_exn ())
         (Linkage_name.create name)
     in
