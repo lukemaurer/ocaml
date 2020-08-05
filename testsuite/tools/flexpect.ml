@@ -14,6 +14,11 @@ module Outcome = struct
     | Error -> 2
 end
 
+let show_diff a b =
+  let command_line = Filename.quote_command "diff" [ "-u"; a; b ] in
+  let _exit_code = Sys.command command_line in
+  ()
+
 let run_expect_test ~backend filename : Outcome.t =
   match Parse_flambda.parse_expect_test_spec filename with
   | Ok { before; after = expected } ->
@@ -44,6 +49,7 @@ let run_expect_test ~backend filename : Outcome.t =
         close_out corrected_out;
         Format.eprintf "FAIL - Saving corrected test as %s@."
           corrected_filename;
+        show_diff filename corrected_filename;
         Failure
     end
   | Error e ->
