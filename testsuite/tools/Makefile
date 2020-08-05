@@ -86,7 +86,7 @@ flexpect_OCAMLFLAGS = $(addprefix -I $(TOPDIR)/, $(flexpect_DIRS))
 flexpect_LIBS = $(addprefix $(COMPILERLIBSDIR)/,\
   ocamlcommon ocamloptcomp)
 
-tools := $(expect_PROG)
+tools := $(expect_PROG) $(flexpect_PROG)
 
 ifeq "$(NATIVE_COMPILER)" "true"
 tools += $(codegen_PROG)
