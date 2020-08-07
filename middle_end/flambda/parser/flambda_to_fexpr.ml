@@ -7,14 +7,18 @@ module type Convertible_id = sig
   val desc : string
 
   val name : t -> string
+  val add_tag : string -> int -> string
   val mk_fexpr_id : string -> fexpr_id
 end
+
+let default_add_tag name tag = Printf.sprintf "%s_%d" name tag
 
 module Name_map (I : Convertible_id) : sig
   type t
 
   val empty : t
   val bind : t -> I.t -> I.fexpr_id * t
+  val bind_to : t -> I.t -> I.fexpr_id -> t
   val find : t -> I.t -> I.fexpr_id option
   val find_exn : t -> I.t -> I.fexpr_id
 end = struct
@@ -36,7 +40,7 @@ end = struct
         fexpr_id, names
       | Some count ->
         let names = String_map.add name (count+1) names in
-        let name = Printf.sprintf "%s_%d" name count in
+        let name = I.add_tag name count in
         (* Unlikely but possible that, say, both x and x_1 are used; in this
          * case we'll end up with x_1_1 *)
         try_name name names
@@ -44,6 +48,10 @@ end = struct
     let fexpr_id, names = try_name name names in
     let id_map = I.Map.add id fexpr_id id_map in
     fexpr_id, { id_map; names }
+
+  let bind_to { id_map; names } id fexpr_id =
+    let id_map = I.Map.add id fexpr_id id_map in
+    { id_map; names }
 
   let find t id = I.Map.find_opt id t.id_map
   let find_exn t id =
@@ -124,6 +132,7 @@ end = struct
 
     let desc = "variable"
     let name v = raw_name v
+    let add_tag = default_add_tag
     let mk_fexpr_id name = name |> nowhere
   end)
 
@@ -133,6 +142,7 @@ end = struct
 
     let desc = "symbol"
     let name v = linkage_name v |> Linkage_name.to_string
+    let add_tag = default_add_tag
     let mk_fexpr_id name = name |> nowhere
   end)
 
@@ -142,6 +152,7 @@ end = struct
 
     let desc = "code id"
     let name v = Code_id.name v
+    let add_tag = default_add_tag
     let mk_fexpr_id name = name |> nowhere
   end)
 
@@ -151,6 +162,7 @@ end = struct
 
     let desc = "closure id"
     let name v = Closure_id.name v
+    let add_tag = default_add_tag
     let mk_fexpr_id name = name |> nowhere
   end)
 
@@ -160,37 +172,22 @@ end = struct
 
     let desc = "var within closure"
     let name v = Variable.raw_name (v |> Var_within_closure.unwrap)
+    let add_tag = default_add_tag
     let mk_fexpr_id name = name |> nowhere
   end)
 
-  module Continuation_name_map = struct
-    type t = {
-      map : Fexpr.continuation Continuation.Map.t;
-      count : int;
-    }
+  module Continuation_name_map = Name_map(struct
+    include Continuation
+    type fexpr_id = Fexpr.continuation
 
-    let empty = {
-      map = Continuation.Map.empty;
-      count = 0;
-    }
-
-    let bind { map; count } c =
-      let name = if count = 0 then "k" else Printf.sprintf "k%d" count in
-      let c' = name |> nowhere in
-      let map = Continuation.Map.add c (Fexpr.Named c') map in
-      let count = count + 1 in
-      c', { map; count }
-
-    let bind_special { map; count } c s =
-      let c' = Fexpr.Special s in
-      let map = Continuation.Map.add c c' map in
-      { map; count }
-
-    let find_exn { map; _ } c =
-      match Continuation.Map.find_opt c map with
-      | Some c' -> c'
-      | None -> Misc.fatal_errorf "missing continuation %a" Continuation.print c
-  end
+    let desc = "continuation"
+    let name c = Continuation.name c
+    let add_tag name tag =
+      match name with
+      | "k" -> Printf.sprintf "k%d" tag
+      | _ -> default_add_tag name tag
+    let mk_fexpr_id name = Fexpr.Named (name |> nowhere)
+  end)
 
   type t = {
     variables : Variable_name_map.t;
@@ -228,11 +225,16 @@ end = struct
   let bind_named_continuation t c =
     let c, continuations =
       Continuation_name_map.bind t.continuations c in
-    c, { t with continuations }
+    let c_id =
+      match c with
+      | Named c_id -> c_id
+      | Special _ -> assert false
+    in
+    c_id, { t with continuations }
 
   let bind_special_continuation t c ~to_:s =
     let continuations =
-      Continuation_name_map.bind_special t.continuations c s in
+      Continuation_name_map.bind_to t.continuations c (Special s) in
     { t with continuations }
 
   let find_var_exn t v = Variable_name_map.find_exn t.variables v
