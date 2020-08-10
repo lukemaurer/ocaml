@@ -14,59 +14,116 @@ module Outcome = struct
     | Error -> 2
 end
 
+module Test_outcome = struct
+  type t = Pass | Fail of { corrected : Fexpr.expect_test_spec }
+end
+
+let dump_error (e : Parse_flambda.error) =
+  match e with
+  | Parsing_error (msg, loc) ->
+    Format.eprintf
+      "%a:@.\
+       Syntax error: %s@."
+      Location.print_loc loc
+      msg
+  | Lexing_error (error, loc) ->
+    Format.eprintf
+      "%a:@.\
+       Lex error: %a@."
+      Location.print_loc loc
+      Flambda_lex.pp_error error
+
+let run_expect_test
+      ~backend ~extension ~filename ?tag
+      ({ before; after = expected } : Fexpr.expect_test_spec)
+      : Test_outcome.t =
+  let comp_unit =
+    Parse_flambda.make_compilation_unit ~extension ~filename ()
+  in
+  Compilation_unit.set_current comp_unit;
+  let module_ident = Compilation_unit.get_persistent_ident comp_unit in
+  let before_fl = Fexpr_to_flambda.conv ~backend ~module_ident before in
+  check_invariants before_fl;
+  let { Simplify.unit = actual_fl; _ } =
+    Simplify.run ~backend ~round:1 before_fl
+  in
+  let expected_fl = Fexpr_to_flambda.conv ~backend ~module_ident expected in
+  match Compare.flambda_units actual_fl expected_fl with
+  | Equivalent ->
+    Pass
+  | Different { approximant = actual' } ->
+    let actual_fexpr = Flambda_to_fexpr.conv actual' in
+    Fail { corrected = { before; after = actual_fexpr } }
+
 let show_diff a b =
   let command_line = Filename.quote_command "diff" [ "-u"; a; b ] in
   let _exit_code = Sys.command command_line in
   ()
 
-let run_expect_test ~backend filename : Outcome.t =
+let save_corrected ~desc ~print ~orig_filename corrected =
+  let corrected_filename = orig_filename ^ ".corrected" in
+  Format.eprintf "Saving corrected %s as %s@." desc corrected_filename;
+  let corrected_out = open_out corrected_filename in
+  Misc.try_finally ~always:(fun () -> close_out corrected_out) (fun () ->
+    let ppf = corrected_out |> Format.formatter_of_out_channel in
+    print ppf corrected;
+    Format.pp_print_flush ppf ()
+  );
+  show_diff orig_filename corrected_filename
+
+let run_flt_file ~backend filename : Outcome.t =
   match Parse_flambda.parse_expect_test_spec filename with
-  | Ok { before; after = expected } ->
+  | Ok test_spec ->
     begin
-      let comp_unit =
-        Parse_flambda.make_compilation_unit ~extension:"flt" ~filename
-      in
-      Compilation_unit.set_current comp_unit;
-      let module_ident = Compilation_unit.get_persistent_ident comp_unit in
-      let before_fl = Fexpr_to_flambda.conv ~backend ~module_ident before in
-      check_invariants before_fl;
-      let { Simplify.unit = actual_fl; _ } =
-        Simplify.run ~backend ~round:1 before_fl
-      in
-      let expected_fl = Fexpr_to_flambda.conv ~backend ~module_ident expected in
-      match Compare.flambda_units actual_fl expected_fl with
-      | Equivalent ->
+      match run_expect_test ~backend ~extension:".flt" ~filename test_spec with
+      | Pass ->
         Format.eprintf "PASS@.";
         Success
-      | Different { approximant = actual' } ->
-        let actual_fexpr = Flambda_to_fexpr.conv actual' in
-        let corrected_filename = filename ^ ".corrected" in
-        let corrected_out = open_out corrected_filename in
-        Format.fprintf (corrected_out |> Format.formatter_of_out_channel)
-          "@[<v>%a@ ===>@ %a@]@."
-          Print_fexpr.flambda_unit before
-          Print_fexpr.flambda_unit actual_fexpr;
-        close_out corrected_out;
-        Format.eprintf "FAIL - Saving corrected test as %s@."
-          corrected_filename;
-        show_diff filename corrected_filename;
+      | Fail { corrected } ->
+        Format.eprintf "FAIL@.";
+        save_corrected corrected
+          ~desc:"test"
+          ~print:Print_fexpr.expect_test_spec
+          ~orig_filename:filename;
         Failure
     end
   | Error e ->
-    begin match e with
-    | Parsing_error (msg, loc) ->
-      Format.eprintf
-        "%a:@.\
-         Syntax error: %s@."
-        Location.print_loc loc
-        msg
-    | Lexing_error (error, loc) ->
-      Format.eprintf
-        "%a:@.\
-         Lex error: %a@."
-        Location.print_loc loc
-        Flambda_lex.pp_error error
-    end;
+    dump_error e;
+    Error
+
+let run_mdflx_file ~backend filename : Outcome.t =
+  match Parse_flambda.parse_markdown_doc filename with
+  | Ok doc ->
+    let all_passed = ref true in
+    let corrected_doc =
+      List.map (fun (node : Fexpr.markdown_node) : Fexpr.markdown_node ->
+        match node with
+        | Text _ ->
+          node
+        | Expect test_spec ->
+          match run_expect_test test_spec
+                  ~backend ~extension:".mdflx" ~filename with
+          | Pass ->
+            Format.eprintf "PASS@.";
+            node
+          | Fail { corrected } ->
+            all_passed := false;
+            Format.eprintf "FAIL@.";
+            Expect corrected
+      ) doc
+    in
+    if !all_passed
+      then Outcome.Success
+      else
+        begin
+          save_corrected corrected_doc
+            ~desc:"document"
+            ~print:Print_fexpr.markdown_doc
+            ~orig_filename:filename;
+          Failure
+        end
+  | Error e ->
+    dump_error e;
     Error
 
 let _ =
@@ -75,9 +132,11 @@ let _ =
   let outcome =
     match ext with
     | ".flt" ->
-      run_expect_test ~backend:(module Asmgen.Flambda_backend) file
+      run_flt_file ~backend:(module Asmgen.Flambda_backend) file
+    | ".mdflx" ->
+      run_mdflx_file ~backend:(module Asmgen.Flambda_backend) file
     | _ ->
-      Misc.fatal_errorf "Unrecognized extension %s; expected .flt" ext
+      Misc.fatal_errorf "Unrecognized extension %s; expected .flt or .mdflx" ext
   in
   exit (outcome |> Outcome.to_exit_code)
 

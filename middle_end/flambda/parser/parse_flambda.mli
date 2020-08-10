@@ -10,9 +10,15 @@ val parse_fexpr
    : string
   -> (Fexpr.flambda_unit, error) result
 
+val parse_markdown_doc
+   : string
+  -> (Fexpr.markdown_doc, error) result
+
 val make_compilation_unit
    : extension:string
   -> filename:string
+  -> ?tag:string
+  -> unit
   -> Compilation_unit.t
 
 val parse
