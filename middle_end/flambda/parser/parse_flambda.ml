@@ -5,19 +5,36 @@ type error =
   | Lexing_error of Lex.error * Location.t
   | Parsing_error of string * Location.t
 
-let make_loc (startpos, endpos) = {
-  Location.loc_start = startpos;
-  Location.loc_end = endpos;
-  Location.loc_ghost = false;
+let add_pos (pos1 : Lexing.position) (pos2 : Lexing.position)
+      : Lexing.position = {
+  pos_fname = pos1.pos_fname;
+  pos_lnum = pos1.pos_lnum + pos2.pos_lnum - 1;
+  pos_bol = pos1.pos_bol + pos2.pos_bol;
+  pos_cnum = pos1.pos_cnum + pos2.pos_cnum
 }
 
+let make_loc ?relative_to (startpos, endpos) = 
+  let abs pos =
+    match relative_to with
+    | Some base -> add_pos base pos
+    | None -> pos
+  in 
+  {
+    Location.loc_start = abs startpos;
+    Location.loc_end = abs endpos;
+    Location.loc_ghost = false;
+  }
+
+let initial_pos filename =
+  { Lexing.pos_fname = filename; pos_lnum = 1; pos_bol = 0; pos_cnum = 0 }
+
 let run_parser ~start_symbol ~start_pos (lb : Lexing.lexbuf) =
-  let pos = start_pos in
-  lb.lex_start_p <- pos;
-  lb.lex_curr_p <- pos;
   let supplier =
     Parser.MenhirInterpreter.lexer_lexbuf_to_supplier Lex.token lb
   in
+  (* [Lexing] assumes that the position it starts in has cnum = bol = 0, so
+     we humor it and then add [start_pos] back in if there's an error. *)
+  let pos = initial_pos Lexing.(start_pos.pos_fname) in
   let start = start_symbol pos in
   try
     Parser.MenhirInterpreter.loop_handle
@@ -32,7 +49,8 @@ let run_parser ~start_symbol ~start_pos (lb : Lexing.lexbuf) =
             with Not_found -> Format.sprintf "Unknown error in state %d" s
           in
           let loc =
-            make_loc (Parser.MenhirInterpreter.positions error_state)
+            make_loc ~relative_to:start_pos
+              (Parser.MenhirInterpreter.positions error_state)
           in
           Error (Parsing_error (msg, loc))
         | _ ->
@@ -41,10 +59,7 @@ let run_parser ~start_symbol ~start_pos (lb : Lexing.lexbuf) =
       supplier start
   with
   | Lex.Error (error, loc) ->
-    Error (Lexing_error (error, make_loc loc))
-
-let initial_pos filename =
-  { Lexing.pos_fname = filename; pos_lnum = 1; pos_bol = 0; pos_cnum = 0 }
+    Error (Lexing_error (error, make_loc ~relative_to:start_pos loc))
 
 let run_parser_on_file ~start_symbol filename =
   let ic = open_in filename in
@@ -65,9 +80,8 @@ let text_of_reversed_lines rev_lines =
   String.concat "\n" (List.rev rev_lines)
 
 let after_line ~length (pos : Lexing.position) =
-  { pos with pos_lnum = pos.pos_lnum + 1;
-             pos_bol = pos.pos_bol + length + 1; (* include the newline *)
-             pos_cnum = 0 }
+  let pos_bol = pos.pos_bol + length in (* include the newline *)
+  { pos with pos_lnum = pos.pos_lnum + 1; pos_bol; pos_cnum = pos_bol }
 
 let read_lines ~until ~pos ic =
   let rec loop pos rev_lines =
