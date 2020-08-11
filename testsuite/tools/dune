@@ -20,4 +20,9 @@
   (modules expect_test)
 )
 
-
+(executable
+  (name flexpect)
+  (modes byte)
+  (flags (:standard -principal -nostdlib -cclib "-I runtime"))
+  (libraries ocamltoplevel ocamlbytecomp ocamlcommon runtime stdlib)
+  (modules flexpect))
