@@ -8,6 +8,7 @@ type token =
   | UNREACHABLE
   | UNIT
   | TUPLED
+  | TAG_IMM
   | SYMBOL of (string)
   | SWITCH
   | STUB
@@ -42,6 +43,7 @@ type token =
   | LPAREN
   | LET
   | LBRACE
+  | IS_INT
   | INT64
   | INT32
   | INT of (string * char option)
@@ -50,6 +52,7 @@ type token =
   | IMM
   | IDENT of (string)
   | HCF
+  | GET_TAG
   | FLOAT_KIND
   | FLOAT of (float)
   | FABRICATED
@@ -68,6 +71,7 @@ type token =
   | CODE
   | CLOSURE
   | CCALL
+  | BLOCK_LOAD
   | BLOCK
   | BIGARROW
   | AT

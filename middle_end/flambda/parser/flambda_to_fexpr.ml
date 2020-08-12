@@ -309,6 +309,9 @@ let kinded_parameter env (kp : Kinded_parameter.t)
   let param, env = Env.bind_var env (Kinded_parameter.var kp) in
   { param; kind = k }, env
 
+let targetint_ocaml (i : Targetint.OCaml.t) : Fexpr.targetint =
+  i |> Targetint.OCaml.to_int64
+
 let recursive_flag (r : Recursive.t) : Fexpr.is_recursive =
   match r with
   | Recursive -> Recursive
@@ -316,6 +319,12 @@ let recursive_flag (r : Recursive.t) : Fexpr.is_recursive =
 
 let unop env (op : Flambda_primitive.unary_primitive) : Fexpr.unop =
   match op with
+  | Box_number Untagged_immediate ->
+    Tag_imm
+  | Get_tag ->
+    Get_tag
+  | Is_int ->
+    Is_int
   | Opaque_identity ->
     Opaque_identity
   | Unbox_number Untagged_immediate ->
@@ -329,15 +338,23 @@ let unop env (op : Flambda_primitive.unary_primitive) : Fexpr.unop =
     let move_to = Env.translate_closure_id env move_to in
     Select_closure { move_from; move_to }
   | _ ->
-    Misc.fatal_error "TODO: More unary primitives"
+    Misc.fatal_errorf "TODO: Unary primitive: %a"
+      Flambda_primitive.Without_args.print
+      (Flambda_primitive.Without_args.Unary op)
 
 let binop (op : Flambda_primitive.binary_primitive) : Fexpr.binop =
   match op with
-  | Block_load (Values { field_kind = Any_value;
-                         size = Unknown;
-                         tag }, Immutable)
-      when Tag.Scannable.equal tag Tag.Scannable.zero ->
-    Block_load (Block Value, Immutable)
+  | Block_load (Values { field_kind;
+                         size;
+                         tag }, mutability) ->
+    let size =
+      match size with
+      | Known size -> Some (size |> targetint_ocaml)
+      | Unknown -> None
+    in
+    Block_load (Values { field_kind;
+                         size;
+                         tag = tag |> Tag.Scannable.to_int }, mutability)
   | Phys_equal (k, op) ->
     let k =
       match kind k with
@@ -350,14 +367,18 @@ let binop (op : Flambda_primitive.binary_primitive) : Fexpr.binop =
   | Int_arith (Tagged_immediate, Sub) ->
     Infix Minus
   | _ ->
-    Misc.fatal_error "TODO: More binary primitives"
+    Misc.fatal_errorf "TODO: Binary primitive: %a"
+      Flambda_primitive.Without_args.print
+      (Flambda_primitive.Without_args.Binary op)
 
 let varop (op : Flambda_primitive.variadic_primitive) : Fexpr.varop =
   match op with
   | Make_block (Values (tag, _), mutability) ->
     Make_block (tag |> Tag.Scannable.to_int, mutability)
   | _ ->
-    Misc.fatal_error "TODO: More variadic primitives"
+    Misc.fatal_errorf "TODO: Variadic primitive: %a"
+      Flambda_primitive.Without_args.print
+      (Flambda_primitive.Without_args.Variadic op)
 
 let prim env (p : Flambda_primitive.t) : Fexpr.prim =
   match p with
@@ -365,8 +386,10 @@ let prim env (p : Flambda_primitive.t) : Fexpr.prim =
     Unary (unop env op, simple env arg)
   | Binary (op, arg1, arg2) ->
     Binary (binop op, simple env arg1, simple env arg2)
-  | Ternary _ ->
-    Misc.fatal_error "TODO: Ternary primitives"
+  | Ternary (op, _, _, _) ->
+    Misc.fatal_errorf "TODO: Ternary primitive:"
+      Flambda_primitive.Without_args.print
+      (Flambda_primitive.Without_args.Ternary op)
   | Variadic (op, args) ->
     Variadic (varop op, List.map (simple env) args)
 
@@ -396,6 +419,11 @@ let set_of_closures env sc =
       |> Closure_id.Lmap.bindings)
   in
   let elts = closure_elements env (Set_of_closures.closure_elements sc) in
+  let elts =
+    match elts with
+    | [] -> None
+    | _ -> Some elts
+  in
   fun_decls, elts
 
 let field_of_block env (field : Flambda.Static_const.Field_of_block.t)
@@ -457,7 +485,7 @@ and dynamic_let_expr env vars (defining_expr : Flambda.Named.t) body
       let defining_exprs =
         List.map (fun decl : Fexpr.named -> Fexpr.Closure decl) fun_decls
       in
-      defining_exprs, Some closure_elements
+      defining_exprs, closure_elements
     | Static_consts _ ->
       assert false
   in
@@ -522,11 +550,6 @@ and static_let_expr env bound_symbols defining_expr body : Fexpr.expr =
           let symbol = Env.find_symbol_exn env symbol in
           { symbol; fun_decl }
         ) fun_decls closure_ids
-      in
-      let elements =
-        match elements with
-        | [] -> None
-        | _ -> Some elements
       in
       Set_of_closures { bindings; elements }
     | Code code_id, Code code ->

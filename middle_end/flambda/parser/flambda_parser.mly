@@ -45,6 +45,7 @@ let make_const_int (i, m) : const =
 %token APPLY [@symbol "apply"]
 %token BIGARROW [@symbol "===>"]
 %token BLOCK [@symbol "Block"]
+%token BLOCK_LOAD [@symbol "block_load"]
 %token CCALL  [@symbol "ccall"]
 %token CLOSURE  [@symbol "closure"]
 %token CODE  [@symbol "code"]
@@ -62,6 +63,7 @@ let make_const_int (i, m) : const =
 %token FABRICATED [@symbol "fabricated"]
 %token <float> FLOAT
 %token FLOAT_KIND [@symbol "float"]
+%token GET_TAG [@symbol "get_tag"]
 %token HCF   [@symbol "HCF"]
 %token <string> IDENT
 %token IMM   [@symbol "imm" ]
@@ -70,6 +72,7 @@ let make_const_int (i, m) : const =
 %token INT32 [@symbol "int32"]
 %token INT64 [@symbol "int64"]
 %token <string * char option> INT
+%token IS_INT [@symbol "is_int"]
 %token LBRACE [@symbol "{"]
 %token LET    [@symbol "let"]
 %token LPAREN [@symbol "("]
@@ -93,6 +96,7 @@ let make_const_int (i, m) : const =
 %token STAR   [@symbol "*"]
 %token SWITCH [@symbol "switch"]
 %token<string> SYMBOL
+%token TAG_IMM [@symbol "tag_imm"]
 %token TUPLED [@symbol "tupled"]
 %token UNIT   [@symbol "unit"]
 %token UNREACHABLE [@symbol "Unreachable"]
@@ -114,6 +118,7 @@ let make_const_int (i, m) : const =
 %token PRIM_UNTAG_IMM [@symbol "%untag_imm"]
 
 %start flambda_unit expect_test_spec
+%type <Fexpr.block_access_field_kind> block_access_field_kind
 %type <Fexpr.flambda_unit> flambda_unit
 %type <Fexpr.expect_test_spec> expect_test_spec
 %type <Fexpr.static_structure> static_structure
