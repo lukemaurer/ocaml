@@ -70,6 +70,12 @@ let print_rawflambda ppf unit =
       (Flambda_colours.each_file ())
       (Flambda_colours.normal ())
       Flambda_unit.print unit
+  end;
+  if !Clflags.dump_rawfexpr then begin
+    Format.fprintf ppf "\n%sAfter closure conversion:%s@ %a@."
+      (Flambda_colours.each_file ())
+      (Flambda_colours.normal ())
+      Print_fexpr.flambda_unit (unit |> Flambda_to_fexpr.conv)
   end
 
 let print_flambda name ppf unit =
@@ -79,6 +85,13 @@ let print_flambda name ppf unit =
       name
       (Flambda_colours.normal ())
       Flambda_unit.print unit
+  end;
+  if !Clflags.dump_fexpr then begin
+    Format.fprintf ppf "\n%sAfter %s:%s@ %a@."
+      (Flambda_colours.each_file ())
+      name
+      (Flambda_colours.normal ())
+      Print_fexpr.flambda_unit (unit |> Flambda_to_fexpr.conv)
   end
 
 let middle_end0 ppf ~prefixname:_ ~backend ~filename ~module_ident
