@@ -34,7 +34,6 @@ let keyword_table =
     "andwhere", ANDWHERE;
     "apply", APPLY;
     "Block", BLOCK;
-    "block_load", BLOCK_LOAD;
     "ccall", CCALL;
     "closure", CLOSURE;
     "code", CODE;
@@ -48,13 +47,11 @@ let keyword_table =
     "fabricated", FABRICATED;
     "float", FLOAT_KIND;
     "halt_and_catch_fire", HCF;
-    "get_tag", GET_TAG;
     "imm", IMM;
     "immutable_unique", IMMUTABLE_UNIQUE;
     "in", IN;
     "int32", INT32;
     "int64", INT64;
-    "is_int", IS_INT;
     "let", LET;
     "mutable", MUTABLE;
     "nativeint", NATIVEINT;
@@ -65,7 +62,6 @@ let keyword_table =
     "size", SIZE;
     "stub", STUB;
     "switch", SWITCH;
-    "tag_imm", TAG_IMM;
     "tupled", TUPLED;
     "unit", UNIT;
     "unreachable", UNREACHABLE;
