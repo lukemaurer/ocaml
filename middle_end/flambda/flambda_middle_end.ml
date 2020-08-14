@@ -105,7 +105,8 @@ let output_flexpect ~ml_filename old_unit new_unit =
     let out = open_out filename in
     Misc.try_finally ~always:(fun () -> close_out out) (fun () ->
       let ppf = out |> Format.formatter_of_out_channel in
-      Format.fprintf ppf "%a@." Print_fexpr.expect_test_spec test)
+      Print_fexpr.expect_test_spec ppf test;
+      Format.pp_print_flush ppf ())
   end
 
 let middle_end0 ppf ~prefixname:_ ~backend ~filename ~module_ident
