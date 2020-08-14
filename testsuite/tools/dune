@@ -27,3 +27,11 @@
   (libraries ocamltoplevel ocamlbytecomp ocamlcommon ocamloptcomp flambda
     runtime stdlib)
   (modules flexpect))
+
+(executable
+  (name parseflambda)
+  (modes byte)
+  (flags (:standard -principal -nostdlib -cclib "-I runtime"))
+  (libraries ocamltoplevel ocamlbytecomp ocamlcommon ocamloptcomp flambda
+    runtime stdlib)
+  (modules parseflambda))
