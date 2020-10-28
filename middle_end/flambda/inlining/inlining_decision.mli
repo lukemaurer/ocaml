@@ -67,7 +67,7 @@ end
 
 val make_decision_for_call_site
    : Downwards_env.t
-  -> function_decl_rec_info:Rec_info.t
+  -> function_decl_coercion:Coercion.t
   -> apply_inlining_state:Inlining_state.t
   -> Inline_attribute.t
   -> Call_site_decision.t

@@ -40,8 +40,9 @@ let make_inlined_body ~callee ~unroll_to ~params ~args ~my_closure ~body
       apply_exn_continuation
   in
   let callee =
-    Simple.merge_rec_info callee
-      ~newer_rec_info:(Some (Rec_info.create ~depth:1 ~unroll_to))
+    (* CR xclerc for xclerc: build the proper coercion. *)
+    Simple.compose_coercion callee
+      ~newer_coercion:(ignore unroll_to; Some Coercion.id)
     |> Option.get  (* CR mshinwell: improve *)
   in
   Expr.apply_name_permutation
