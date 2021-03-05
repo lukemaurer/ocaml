@@ -1003,11 +1003,9 @@ and add_equation t name ty =
       let alias = Simple.name name in
       let kind = Type_grammar.kind ty in
       let binding_time_and_mode_alias = binding_time_and_mode t name in
-      let coercion = Simple.coercion alias_of in
       let binding_time_and_mode_alias_of =
         binding_time_and_mode_of_simple t alias_of
       in
-      let alias_of = alias_of |> Simple.without_coercion in
       let ({ canonical_element;
              alias_of_demoted_element;
              t = aliases;
@@ -1016,7 +1014,6 @@ and add_equation t name ty =
           aliases
           ~element1:alias
           ~binding_time_and_mode1:binding_time_and_mode_alias
-          ~coercion_from_element2_to_element1:coercion
           ~element2:alias_of
           ~binding_time_and_mode2:binding_time_and_mode_alias_of
       in

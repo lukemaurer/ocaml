@@ -22,14 +22,7 @@ let next_time : unit -> Binding_time.With_name_mode.t =
     next := Binding_time.succ time;
     Binding_time.With_name_mode.create time Name_mode.normal
 
-let mk_simple name depth =
-  let var = Simple.var (Variable.create name) in
-  match depth with
-  | 0 ->
-    var
-  | _ ->
-    Simple.apply_coercion_exn var (Coercion.change_depth ~from:0 ~to_:depth)
-
+let mk_simple name = Simple.var (Variable.create name)
 let mk_coercion from to_ = Coercion.change_depth ~from ~to_
 
 let add_alias
@@ -40,12 +33,14 @@ let add_alias
       ~coercion_from_element2_to_element1
       ~element2
       ~binding_time_and_mode2 =
+  let element2 =
+    Simple.with_coercion element2 coercion_from_element2_to_element1
+  in
   let { Aliases.t; canonical_element; alias_of_demoted_element; coercion_from_alias_of_demoted_to_canonical; } =
     Aliases.add
       aliases
       ~element1
       ~binding_time_and_mode1
-      ~coercion_from_element2_to_element1
       ~element2
       ~binding_time_and_mode2
   in
@@ -69,8 +64,8 @@ let () = test "single alias" ~f:(fun ppf ->
   let aliases = Aliases.empty in
   let t_x = next_time () in
   let t_y = next_time () in
-  let x = mk_simple "x" 0 in
-  let y = mk_simple "y" 1 in
+  let x = mk_simple "x" in
+  let y = mk_simple "y" in
   (* x <--[f]-- y *)
   let aliases =
     add_alias
@@ -88,8 +83,8 @@ let () = test "single alias (inverse)" ~f:(fun ppf ->
   let aliases = Aliases.empty in
   let t_y = next_time () in
   let t_x = next_time () in
-  let x = mk_simple "x" 0 in
-  let y = mk_simple "y" 1 in
+  let x = mk_simple "x" in
+  let y = mk_simple "y" in
   (* x <--[f]-- y
      ~>
      y <--[F]-- x *)
@@ -110,9 +105,9 @@ let () = test "two aliases (independent)" ~f:(fun ppf ->
   let t_x = next_time () in
   let t_y = next_time () in
   let t_z = next_time () in
-  let x = mk_simple "x" 0 in
-  let y = mk_simple "y" 1 in
-  let z = mk_simple "z" 2 in
+  let x = mk_simple "x" in
+  let y = mk_simple "y" in
+  let z = mk_simple "z" in
   (* x <--[f]-- y
      +
      x <--[g]-- z
@@ -146,9 +141,9 @@ let () = test "two aliases (simple chain)" ~f:(fun ppf ->
   let t_x = next_time () in
   let t_y = next_time () in
   let t_z = next_time () in
-  let x = mk_simple "x" 0 in
-  let y = mk_simple "y" 1 in
-  let z = mk_simple "z" 2 in
+  let x = mk_simple "x" in
+  let y = mk_simple "y" in
+  let z = mk_simple "z" in
   (* x <--[f]-- y
      +
      y <--[g]-- z
@@ -182,9 +177,9 @@ let () = test "two aliases (two inverses)" ~f:(fun ppf ->
   let t_z = next_time () in
   let t_x = next_time () in
   let t_y = next_time () in
-  let x = mk_simple "x" 0 in
-  let y = mk_simple "y" 1 in
-  let z = mk_simple "z" 2 in
+  let x = mk_simple "x" in
+  let y = mk_simple "y" in
+  let z = mk_simple "z" in
   (* x <--[f]-- y
      +
      y <--[g]-- z
@@ -218,9 +213,9 @@ let () = test "two aliases (one inverse)" ~f:(fun ppf ->
   let t_z = next_time () in
   let t_x = next_time () in
   let t_y = next_time () in
-  let x = mk_simple "x" 0 in
-  let y = mk_simple "y" 1 in
-  let z = mk_simple "z" 2 in
+  let x = mk_simple "x" in
+  let y = mk_simple "y" in
+  let z = mk_simple "z" in
   (* x <--[f]-- y
      +
      z <--[g]-- y
@@ -254,9 +249,9 @@ let () = test "two aliases (one inverse)" ~f:(fun ppf ->
   let t_x = next_time () in
   let t_y = next_time () in
   let t_z = next_time () in
-  let x = mk_simple "x" 0 in
-  let y = mk_simple "y" 1 in
-  let z = mk_simple "z" 2 in
+  let x = mk_simple "x" in
+  let y = mk_simple "y" in
+  let z = mk_simple "z" in
   (* x <--[f]-- y
      +
      z <--[g]-- y
@@ -291,10 +286,10 @@ let () = test "three aliases (one inverse)" ~f:(fun ppf ->
   let t_y = next_time () in
   let t_z = next_time () in
   let t_t = next_time () in
-  let x = mk_simple "x" 0 in
-  let y = mk_simple "y" 0 in
-  let z = mk_simple "z" 0 in
-  let t = mk_simple "t" 0 in
+  let x = mk_simple "x" in
+  let y = mk_simple "y" in
+  let z = mk_simple "z" in
+  let t = mk_simple "t" in
   (* x <--[f]-- y
      +
      z <--[g]-- t
@@ -342,10 +337,10 @@ let () = test "three aliases (two inverses)" ~f:(fun ppf ->
   let t_x = next_time () in
   let t_y = next_time () in
   let t_t = next_time () in
-  let x = mk_simple "x" 0 in
-  let y = mk_simple "y" 1 in
-  let z = mk_simple "z" 2 in
-  let t = mk_simple "t" 3 in
+  let x = mk_simple "x" in
+  let y = mk_simple "y" in
+  let z = mk_simple "z" in
+  let t = mk_simple "t" in
   (* x <--[f]-- y
      +
      z <--[g]-- t

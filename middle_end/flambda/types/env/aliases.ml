@@ -646,19 +646,23 @@ let add_alias t ~element1 ~coercion_from_element2_to_element1 ~element2 =
       ~coercion_from_element2_to_canonical_element2
       ~coercion_from_canonical_element2_to_canonical_element1
 
-let add t ~element1 ~binding_time_and_mode1
-      ~coercion_from_element2_to_element1
-      ~element2 ~binding_time_and_mode2 =
+let add t ~element1:element1_with_coercion ~binding_time_and_mode1
+      ~element2:element2_with_coercion ~binding_time_and_mode2 =
   let original_t = t in
-  if !Clflags.flambda_invariant_checks then begin
-    match Simple.coercion element1, Simple.coercion element2 with
-    | Id, Id -> ()
-    | _, _ ->
-      Misc.fatal_errorf
-        "arguments to Aliases.add should have their coercions stripped:@ %a@ %a"
-        Simple.print element1
-        Simple.print element2
-  end;
+  (* element1_with_coercion <--[c1]-- element1
+     +
+     element2_with_coercion <--[c2]-- element2
+     ~
+     element1 <--[c1^-1]-- element1_with_coercion
+     ~
+     element1 <--[c1^-1 << c2]-- element2
+   *)
+  let element1 = element1_with_coercion |> Simple.without_coercion in
+  let element2 = element2_with_coercion |> Simple.without_coercion in
+  let coercion_from_element2_to_element1 =
+    Coercion.compose_exn (Simple.coercion element2_with_coercion)
+      ~then_:(Coercion.inverse (Simple.coercion element1_with_coercion))
+  in
   let t =
     { t with binding_times_and_modes =
                Simple.Map.add element1 binding_time_and_mode1

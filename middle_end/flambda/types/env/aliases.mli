@@ -45,7 +45,6 @@ val add
    : t
   -> element1:Simple.t
   -> binding_time_and_mode1:Binding_time.With_name_mode.t
-  -> coercion_from_element2_to_element1:Coercion.t
   -> element2:Simple.t
   -> binding_time_and_mode2:Binding_time.With_name_mode.t
   -> add_result
