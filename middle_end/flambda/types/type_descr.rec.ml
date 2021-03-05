@@ -140,8 +140,7 @@ module Make (Head : Type_head_intf.S
   let apply_coercion t coercion : _ Or_bottom.t =
     match descr t with
     | Equals simple ->
-      let newer_coercion = Some coercion in
-      begin match Simple.compose_coercion simple ~newer_coercion with
+      begin match Simple.apply_coercion simple coercion with
       | None -> Bottom
       | Some simple -> Ok (create_equals simple)
       end

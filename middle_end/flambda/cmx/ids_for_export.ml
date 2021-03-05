@@ -75,8 +75,8 @@ let add_name t name =
 let add_simple t simple =
   let simples =
     match Simple.coercion simple with
-    | None -> t.simples
-    | Some _ -> Simple.Set.add simple t.simples
+    | Id -> t.simples
+    | _ -> Simple.Set.add simple t.simples
   in
   let t = { t with simples; } in
   Simple.pattern_match simple
@@ -92,10 +92,10 @@ let add_continuation t continuation =
 let from_simple simple =
   let simples =
     match Simple.coercion simple with
-    | None ->
+    | Id ->
       (* This simple will not be in the grand_table_of_simples *)
       Simple.Set.empty
-    | Some _ -> Simple.Set.singleton simple
+    | _ -> Simple.Set.singleton simple
   in
   Simple.pattern_match simple
     ~const:(fun const ->
@@ -200,11 +200,11 @@ module Import_map = struct
     | simple -> simple
     | exception Not_found ->
       begin match Simple.coercion simple with
-      | None ->
+      | Id ->
         Simple.pattern_match simple
           ~name:(fun n -> Simple.name (name t n))
           ~const:(fun c -> Simple.const (const t c))
-      | Some _coercion -> simple
+      | _ -> simple
       end
 
   let closure_var_is_used t var =

@@ -218,7 +218,7 @@ end
 (* CR mshinwell: This parameter needs to be configurable *)
 let max_rec_depth = 1
 
-let make_decision_for_call_site denv ~function_decl_coercion
+let make_decision_for_call_site denv ~function_decl_rec_info:()
       ~apply_inlining_state (inline : Inline_attribute.t)
       : Call_site_decision.t =
   if (not (DE.can_inline denv)) then
@@ -227,28 +227,19 @@ let make_decision_for_call_site denv ~function_decl_coercion
     match inline with
     | Never_inline -> Never_inline_attribute
     | Default_inline | Unroll _ | Always_inline | Hint_inline ->
-      match Coercion.unroll_to function_decl_coercion with
-      | Some unroll_to ->
-        if Coercion.depth function_decl_coercion >= unroll_to then
-          Unrolling_depth_exceeded
-        else
+      if Inlining_state.is_depth_exceeded apply_inlining_state
+      then
+        Max_inlining_depth_exceeded
+      else
+        match inline with
+        | Never_inline -> assert false
+        | Default_inline ->
           Inline { attribute = None; unroll_to = None; }
-      | None ->
-        if Inlining_state.is_depth_exceeded apply_inlining_state
-        then
-          Max_inlining_depth_exceeded
-        else
-          match inline with
-          | Never_inline -> assert false
-          | Default_inline ->
-            if Coercion.depth function_decl_coercion >= max_rec_depth then
-              Recursion_depth_exceeded
-            else
-              Inline { attribute = None; unroll_to = None; }
-          | Unroll unroll_to ->
-            let unroll_to =
-              Coercion.depth function_decl_coercion + unroll_to
-            in
-            Inline { attribute = Some Unroll; unroll_to = Some unroll_to; }
-          | Always_inline | Hint_inline ->
-            Inline { attribute = Some Always; unroll_to = None; }
+        | Unroll unroll_to ->
+          Inline { attribute = Some Unroll; unroll_to = Some unroll_to; }
+        | Always_inline | Hint_inline ->
+          Inline { attribute = Some Always; unroll_to = None; }
+
+let _ = Call_site_decision.Unrolling_depth_exceeded
+let _ = Call_site_decision.Recursion_depth_exceeded
+let _ = max_rec_depth

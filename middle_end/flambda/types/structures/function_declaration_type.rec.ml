@@ -23,37 +23,36 @@ module Inlinable = struct
   type t = {
     code_id : Code_id.t;
     dbg : Debuginfo.t;
-    coercion : Coercion.t;
+    rec_info : Rec_info.t;
     is_tupled : bool;
   }
 
-  let print ppf { code_id; dbg; coercion; is_tupled; } =
+  let print ppf { code_id; dbg; rec_info; is_tupled; } =
     Format.fprintf ppf
       "@[<hov 1>(Inlinable@ \
         @[<hov 1>(code_id@ %a)@]@ \
         @[<hov 1>(dbg@ %a)@] \
-        @[<hov 1>(coercion@ %a)@]\
+        @[<hov 1>(rec_info@ %a)@] \
         @[<hov 1><is_tupled@ %b)@]\
         )@]"
       Code_id.print code_id
       Debuginfo.print_compact dbg
-      Coercion.print coercion
+      Rec_info.print rec_info
       is_tupled
 
-  let create ~code_id ~dbg ~coercion ~is_tupled =
+  let create ~code_id ~dbg ~rec_info ~is_tupled =
     { code_id;
       dbg;
-      coercion;
+      rec_info;
       is_tupled;
     }
 
   let code_id t = t.code_id
   let dbg t = t.dbg
-  let coercion t = t.coercion
   let is_tupled t = t.is_tupled
 
   let apply_name_permutation
-        ({ code_id; dbg = _; coercion = _; is_tupled = _; } as t) perm =
+        ({ code_id; dbg = _; rec_info = (); is_tupled = _; } as t) perm =
     let code_id' = Name_permutation.apply_code_id perm code_id in
     if code_id == code_id' then t
     else { t with code_id = code_id'; }
@@ -109,7 +108,7 @@ let print ppf t =
 let free_names (t : t) =
   match t with
   | Bottom | Unknown -> Name_occurrences.empty
-  | Ok (Inlinable { code_id; dbg = _; coercion = _; is_tupled = _; })
+  | Ok (Inlinable { code_id; dbg = _; rec_info = (); is_tupled = _; })
   | Ok (Non_inlinable { code_id; is_tupled = _; }) ->
     Name_occurrences.add_code_id Name_occurrences.empty code_id
       Name_mode.in_types
@@ -117,16 +116,16 @@ let free_names (t : t) =
 let all_ids_for_export (t : t) =
   match t with
   | Bottom | Unknown -> Ids_for_export.empty
-  | Ok (Inlinable { code_id; dbg = _; coercion = _; is_tupled = _; })
+  | Ok (Inlinable { code_id; dbg = _; rec_info = (); is_tupled = _; })
   | Ok (Non_inlinable { code_id; is_tupled = _; }) ->
     Ids_for_export.add_code_id Ids_for_export.empty code_id
 
 let import import_map (t : t) : t =
   match t with
   | Bottom | Unknown -> t
-  | Ok (Inlinable { code_id; dbg; coercion; is_tupled; }) ->
+  | Ok (Inlinable { code_id; dbg; rec_info; is_tupled; }) ->
     let code_id = Ids_for_export.Import_map.code_id import_map code_id in
-    Ok (Inlinable { code_id; dbg; coercion; is_tupled; })
+    Ok (Inlinable { code_id; dbg; rec_info; is_tupled; })
   | Ok (Non_inlinable { code_id; is_tupled; }) ->
     let code_id = Ids_for_export.Import_map.code_id import_map code_id in
     Ok (Non_inlinable { code_id; is_tupled; })
@@ -179,13 +178,13 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
   | Ok (Inlinable {
       code_id = code_id1;
       dbg = dbg1;
-      coercion = _coercion1;
+      rec_info = ();
       is_tupled = is_tupled1;
     }),
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      coercion = _coercion2;
+      rec_info = ();
       is_tupled = is_tupled2;
     }) ->
     let typing_env = Meet_env.env env in
@@ -197,12 +196,11 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
       Ok (Ok (Inlinable {
           code_id;
           dbg = dbg1;
-          coercion = _coercion1;
+          rec_info = ();
           is_tupled = is_tupled1;
         }),
         TEE.empty ())
     in
-    (* CR mshinwell: What about [coercion]? *)
     begin match
       Code_age_relation.meet target_code_age_rel ~resolver code_id1 code_id2
     with
@@ -251,13 +249,13 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
   | Ok (Inlinable {
       code_id = code_id1;
       dbg = dbg1;
-      coercion = _coercion1;
+      rec_info = ();
       is_tupled = is_tupled1;
     }),
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      coercion = _coercion2;
+      rec_info = ();
       is_tupled = is_tupled2;
     }) ->
     let typing_env = Join_env.target_join_env env in
@@ -269,11 +267,10 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
       Ok (Inlinable {
         code_id;
         dbg = dbg1;
-        coercion = _coercion1;
+        rec_info = ();
         is_tupled = is_tupled1;
       })
     in
-    (* CR mshinwell: What about [coercion]? *)
     let code_age_rel1 =
       TE.code_age_relation (Join_env.left_join_env env)
     in
@@ -288,14 +285,5 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
     | Unknown -> Unknown
     end
 
-let apply_coercion (t : t) coercion : t Or_bottom.t =
-  match t with
-  | Ok (Inlinable { code_id; dbg; coercion = coercion'; is_tupled; }) ->
-    let coercion = Coercion.compose coercion' ~newer:coercion in
-    Ok (Ok (Inlinable { code_id;
-      dbg;
-      coercion;
-      is_tupled;
-    }))
-  | Ok (Non_inlinable { code_id = _; is_tupled = _; }) -> Ok t
-  | Unknown | Bottom -> Ok t
+let apply_coercion (t : t) _coercion : t Or_bottom.t =
+  Ok t

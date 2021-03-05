@@ -178,7 +178,7 @@ module Typing_env : sig
      : t
     -> min_name_mode:Name_mode.t
     -> Simple.t
-    -> Coercion.t Aliases.coercion_to_canonical Simple.Map.t
+    -> Aliases.coercion_to_canonical Simple.Map.t
 
   val clean_for_export : t -> reachable_names:Name_occurrences.t -> t
 
@@ -232,7 +232,6 @@ module Function_declaration_type : sig
 
     val code_id : t -> Code_id.t
     val dbg : t -> Debuginfo.t
-    val coercion : t -> Coercion.t
     val is_tupled : t -> bool
   end
 
@@ -401,7 +400,7 @@ val mutable_string : size:int -> t
 val create_inlinable_function_declaration
    : code_id:Code_id.t
   -> dbg:Debuginfo.t
-  -> coercion:Coercion.t
+  -> rec_info:Rec_info.t
   -> is_tupled:bool
   -> Function_declaration_type.t
 

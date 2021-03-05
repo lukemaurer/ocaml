@@ -22,13 +22,12 @@ module Inlinable : sig
   val create
      : code_id:Code_id.t
     -> dbg:Debuginfo.t
-    -> coercion:Coercion.t
+    -> rec_info:Rec_info.t
     -> is_tupled:bool
     -> t
 
   val code_id : t -> Code_id.t
   val dbg : t -> Debuginfo.t
-  val coercion : t -> Coercion.t
   val is_tupled : t -> bool
 end
 

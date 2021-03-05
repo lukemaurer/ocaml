@@ -154,7 +154,7 @@ module Simple : sig
 
   val const : Const.t -> t
 
-  val coercion : t -> Coercion.t option
+  val coercion : t -> Coercion.t
 
   val with_coercion : t -> Coercion.t -> t
 

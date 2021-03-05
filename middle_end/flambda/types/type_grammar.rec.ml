@@ -613,10 +613,10 @@ let any_boxed_int32 () = box_int32 (any_naked_int32 ())
 let any_boxed_int64 () = box_int64 (any_naked_int64 ())
 let any_boxed_nativeint () = box_nativeint (any_naked_nativeint ())
 
-let create_inlinable_function_declaration ~code_id ~dbg ~coercion ~is_tupled
+let create_inlinable_function_declaration ~code_id ~dbg ~rec_info ~is_tupled
       : Function_declaration_type.t =
   Ok (Inlinable (
-    Function_declaration_type.Inlinable.create ~code_id ~dbg ~coercion ~is_tupled))
+    Function_declaration_type.Inlinable.create ~code_id ~dbg ~rec_info ~is_tupled))
 
 let create_non_inlinable_function_declaration ~code_id ~is_tupled
       : Function_declaration_type.t =

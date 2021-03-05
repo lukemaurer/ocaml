@@ -14,15 +14,22 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
-type t
+type t = private
+  | Id
+  | Non_id of {
+      from_depth : int;
+      to_depth : int;
+    }
+
+val change_depth : from:int -> to_:int -> t
 
 val id : t
 val is_id : t -> bool
 val inverse : t -> t
-val compose : t -> newer:t -> t
+val compose : t -> then_:t -> t option
+val compose_exn : t -> then_:t -> t
 val print : Format.formatter -> t -> unit
 val equal : t -> t -> bool
 val hash : t -> int
 
-val unroll_to : t -> int option
-val depth : t -> int
+val apply_to_rec_info : t -> Rec_info.t -> Rec_info.t

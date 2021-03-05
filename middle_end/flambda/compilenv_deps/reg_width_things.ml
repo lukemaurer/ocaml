@@ -549,8 +549,8 @@ module Simple = struct
 
   let [@inline always] coercion t =
     let flags = Id.flags t in
-    if flags = simple_flags then Some ((find_data t).coercion)
-    else None
+    if flags = simple_flags then (find_data t).coercion
+    else Coercion.id
 
   module T0 = struct
     let compare = Id.compare
@@ -564,12 +564,9 @@ module Simple = struct
           ~const:(fun cst -> Const.print ppf cst)
       in
       match coercion t with
-      | None -> print ppf t
-      | Some coercion ->
-       Format.fprintf ppf "@[<hov 1>\
-            @[<hov 1>(simple@ %a)@] \
-            @[<hov 1>(coercion@ %a)@]\
-            @]"
+      | Id -> print ppf t
+      | Non_id _ as coercion ->
+        Format.fprintf ppf "@[<hov 1>(coerce@ %a@ %a)@]"
           print t
           Coercion.print coercion
 
@@ -587,12 +584,12 @@ module Simple = struct
     if Coercion.is_id new_coercion then t
     else
       match coercion t with
-      | None ->
+      | Id ->
         let data : Simple_data.t = { simple = t; coercion = new_coercion; } in
         Table.add !grand_table_of_simples data
-      | Some _ ->
+      | Non_id _ ->
         Misc.fatal_errorf "Cannot add [Coercion] to [Simple] %a that already \
-            has [Coercion]"
+            has non-identity [Coercion]"
           print t
 
   module Set = Patricia_tree.Make_set (struct let print = print end)

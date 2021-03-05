@@ -13,20 +13,11 @@
 (**************************************************************************)
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
-(*
-type t
+type t = unit
 
 include Identifiable.S with type t := t
-
-val create : depth:int -> unroll_to:int option -> t
-
-val depth : t -> int
-
-val unroll_to : t -> int option
-
-val merge : t -> newer:t -> t
 
 val initial : t
 
 val is_initial : t -> bool
-*)
+

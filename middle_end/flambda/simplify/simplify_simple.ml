@@ -25,21 +25,15 @@ module TE = T.Typing_env
 (* CR mshinwell: avoid having two functions *)
 let type_for_simple simple kind : _ Or_bottom.t =
   let ty = T.alias_type_of kind simple in
-  match Simple.coercion simple with
-  | None -> Ok (simple, ty)
-  | Some coercion ->
-    match T.apply_coercion ty coercion with
-    | Bottom -> Bottom
-    | Ok ty -> Ok (simple, ty)
+  match T.apply_coercion ty (Simple.coercion simple) with
+  | Bottom -> Bottom
+  | Ok ty -> Ok (simple, ty)
 
 let type_for_simple' simple kind : _ Or_bottom.t * _ =
   let ty = T.alias_type_of kind simple in
-  match Simple.coercion simple with
-  | None -> Ok simple, ty
-  | Some coercion ->
-    match T.apply_coercion ty coercion with
-    | Bottom -> Bottom, T.bottom (T.kind ty)
-    | Ok ty -> Ok simple, ty
+  match T.apply_coercion ty (Simple.coercion simple) with
+  | Bottom -> Bottom, T.bottom (T.kind ty)
+  | Ok ty -> Ok simple, ty
 
 let simplify_simple dacc simple ~min_name_mode : _ Or_bottom.t * _ =
   let typing_env = DA.typing_env dacc in
