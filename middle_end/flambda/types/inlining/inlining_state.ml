@@ -26,7 +26,11 @@ let create ~depth = { depth }
 
 let print ppf t = Format.fprintf ppf "@[<hov 1>(depth@ %d)@]" t.depth
 
-let is_depth_exceeded t = t.depth >= !Clflags.Flambda.Expert.max_inlining_depth
+let is_depth_exceeded t =
+  (* CR-soon lmaurer: Fix this once rec_info is functional again; hardcoding
+     depth of 1 until then *)
+  if true then t.depth >= 1 else
+    t.depth >= !Clflags.Flambda.Expert.max_inlining_depth
 
 let merge t1 t2 = { depth = t1.depth + t2.depth }
 

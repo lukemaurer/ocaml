@@ -41,8 +41,7 @@ let make_inlined_body ~callee ~unroll_to ~params ~args ~my_closure ~body
   in
   let callee =
     (* CR xclerc for xclerc: build the proper coercion. *)
-    Simple.compose_coercion callee
-      ~newer_coercion:(ignore unroll_to; Some Coercion.id)
+    Simple.apply_coercion callee (ignore unroll_to; Coercion.id)
     |> Option.get  (* CR mshinwell: improve *)
   in
   Expr.apply_name_permutation
