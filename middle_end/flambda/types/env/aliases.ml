@@ -87,7 +87,7 @@ module Aliases_of_canonical_element : sig
 
   val move_variables_to_mode_in_types : t -> t
 
-  val compose : t -> newer:Coercion.t -> t
+  val compose : t -> then_:Coercion.t -> t
 end = struct
   type t = {
     aliases : map_to_canonical Name_mode.Map.t;
@@ -225,16 +225,12 @@ end = struct
     invariant t; (* CR xclerc for xclerc: not guaranteed to hold *)
     t
 
-  let compose { aliases; all; } ~newer =
+  let compose { aliases; all; } ~then_ =
     let f m =
       Simple.Map.map
         (fun { coercion_to_canonical; } ->
-          (* CR lmaurer: This seems like the wrong way around to me, but
-             possibly only because I'm confused. At least, this function and/or
-             its argument should have a more descriptive name to make it
-             clearer what's going on - [newer] is not descriptive! *)
            { coercion_to_canonical =
-               Coercion.compose_exn coercion_to_canonical ~then_:newer; })
+               Coercion.compose_exn coercion_to_canonical ~then_; })
         m
     in
     let aliases = Name_mode.Map.map f aliases in
@@ -482,7 +478,7 @@ let add_alias_between_canonical_elements t ~canonical_element ~coercion_to_canon
     let aliases =
       Aliases_of_canonical_element.add
         (Aliases_of_canonical_element.union
-           (Aliases_of_canonical_element.compose aliases_of_to_be_demoted ~newer:coercion_to_canonical)
+           (Aliases_of_canonical_element.compose aliases_of_to_be_demoted ~then_:coercion_to_canonical)
            aliases_of_canonical_element)
         to_be_demoted
         ~coercion_to_canonical
