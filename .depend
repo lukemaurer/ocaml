@@ -6940,7 +6940,6 @@ middle_end/flambda/simplify/simplify_unary_primitive.cmo : \
     middle_end/flambda/basic/simple.cmi \
     utils/numbers.cmi \
     middle_end/flambda/simplify/typing_helpers/number_adjuncts.cmi \
-    middle_end/flambda/naming/name_in_binding_pos.cmi \
     middle_end/flambda/basic/name.cmi \
     middle_end/flambda/basic/closure_id.cmi \
     middle_end/flambda/simplify/simplify_unary_primitive.cmi
@@ -6955,7 +6954,6 @@ middle_end/flambda/simplify/simplify_unary_primitive.cmx : \
     middle_end/flambda/basic/simple.cmx \
     utils/numbers.cmx \
     middle_end/flambda/simplify/typing_helpers/number_adjuncts.cmx \
-    middle_end/flambda/naming/name_in_binding_pos.cmx \
     middle_end/flambda/basic/name.cmx \
     middle_end/flambda/basic/closure_id.cmx \
     middle_end/flambda/simplify/simplify_unary_primitive.cmi
@@ -9649,6 +9647,7 @@ middle_end/flambda/types/structures/product_intf.cmx : \
     utils/identifiable.cmx \
     middle_end/flambda/types/kinds/flambda_kind.cmx
 middle_end/flambda/types/structures/row_like.rec.cmo : \
+    middle_end/flambda/basic/var_within_closure.cmi \
     utils/targetint.cmi \
     middle_end/flambda/compilenv_deps/target_imm.cmi \
     middle_end/flambda/types/basic/tag_or_unknown_and_size.cmi \
@@ -9669,6 +9668,7 @@ middle_end/flambda/types/structures/row_like.rec.cmo : \
     utils/clflags.cmi \
     middle_end/flambda/types/structures/row_like.rec.cmi
 middle_end/flambda/types/structures/row_like.rec.cmx : \
+    middle_end/flambda/basic/var_within_closure.cmx \
     utils/targetint.cmx \
     middle_end/flambda/compilenv_deps/target_imm.cmx \
     middle_end/flambda/types/basic/tag_or_unknown_and_size.cmx \
@@ -9689,6 +9689,7 @@ middle_end/flambda/types/structures/row_like.rec.cmx : \
     utils/clflags.cmx \
     middle_end/flambda/types/structures/row_like.rec.cmi
 middle_end/flambda/types/structures/row_like.rec.cmi : \
+    middle_end/flambda/basic/var_within_closure.cmi \
     middle_end/flambda/types/structures/type_structure_intf.cmo \
     utils/targetint.cmi \
     middle_end/flambda/compilenv_deps/target_imm.cmi \
