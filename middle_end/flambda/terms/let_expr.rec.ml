@@ -192,7 +192,7 @@ let flatten_for_printing t =
           (Named.must_be_static_consts t.defining_expr)
       in
       Some (flattened, body)
-    | Singleton _ | Set_of_closures _ -> None)
+    | Depth _ | Singleton _ | Set_of_closures _ -> None)
 
 let print_closure_binding ppf (closure_id, sym) =
   Format.fprintf ppf "@[%a @<0>%s\u{21a4}@<0>%s %a@]"
@@ -313,7 +313,7 @@ let print_with_cache ~cache ppf
       pattern_match t
         ~f:(fun (bindable_let_bound : Bindable_let_bound.t) ~body ->
           match bindable_let_bound with
-          | Singleton _ | Set_of_closures _ ->
+          | Singleton _ | Depth _ | Set_of_closures _ ->
             fprintf ppf
               "@ @[<hov 1>@<0>%s%a@<0>%s =@<0>%s@ %a@]"
               (let_bound_var_colour bindable_let_bound)
@@ -328,7 +328,7 @@ let print_with_cache ~cache ppf
   pattern_match t ~f:(fun (bindable_let_bound : Bindable_let_bound.t) ~body ->
     match bindable_let_bound with
     | Symbols _ -> print_let_symbol_with_cache ~cache ppf t
-    | Singleton _ | Set_of_closures _ ->
+    | Singleton _ | Depth _ | Set_of_closures _ ->
       fprintf ppf "@[<v 1>(@<0>%slet@<0>%s@ (@[<v 0>\
           @[<hov 1>@<0>%s%a@<0>%s =@<0>%s@ %a@]"
         (Flambda_colours.expr_keyword ())
@@ -399,6 +399,16 @@ let invariant env t =
         Simple.pattern_match simple
           ~const:(fun const -> E.add_variable env var (T.kind_for_const const))
           ~name:(fun name -> E.add_variable env var (E.kind_of_name env name))
+      | Depth depth, Depth depth_var ->
+        let inner_depth_var = (Depth_expr.descr depth).var in
+        Option.iter (E.check_depth_variable_is_bound env) inner_depth_var;
+        E.add_depth_variable env depth_var
+      | Depth _, _ ->
+        Misc.fatal_errorf "Cannot bind a [Depth] to a non-[Depth]:@ %a"
+          print t
+      | (Simple _ | Prim _ | Set_of_closures _ | Static_consts _), Depth _ ->
+        Misc.fatal_errorf "Cannot bind a non-[Depth] to a [Depth]:@ %a"
+          print t
       | Static_consts _, Symbols _ -> env
       | Static_consts _, Singleton _ ->
         Misc.fatal_errorf "Cannot bind a [Static_const] to a [Singleton]:@ %a"

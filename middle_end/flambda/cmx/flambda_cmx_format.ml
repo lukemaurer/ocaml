@@ -28,6 +28,7 @@ type table_data = {
   consts : Const.exported Const.Map.t;
   code_ids : Code_id.exported Code_id.Map.t;
   continuations : Continuation.exported Continuation.Map.t;
+  depth_variables : Depth_variable.exported Depth_variable.Map.t;
 }
 
 type t0 = {
@@ -86,12 +87,21 @@ let create ~final_typing_env ~all_code ~exported_offsets ~used_closure_vars =
       exported_ids.continuations
       Continuation.Map.empty
   in
+  let depth_variables =
+    Depth_variable.Set.fold (fun depth_variable depth_variables ->
+        Depth_variable.Map.add depth_variable
+          (Depth_variable.export depth_variable)
+          depth_variables)
+      exported_ids.depth_variables
+      Depth_variable.Map.empty
+  in
   let table_data =
     { symbols;
       variables;
       simples;
       consts;
       code_ids;
+      depth_variables;
       continuations;
     }
   in
@@ -130,6 +140,10 @@ let import_typing_env_and_code0 t =
     Continuation.Map.filter_map (filter Continuation.import)
       t.table_data.continuations
   in
+  let depth_variables =
+    Depth_variable.Map.filter_map (filter Depth_variable.import)
+      t.table_data.depth_variables
+  in
   let used_closure_vars = t.used_closure_vars in
   let renaming =
     Renaming.create_import_map
@@ -139,6 +153,7 @@ let import_typing_env_and_code0 t =
       ~consts
       ~code_ids
       ~continuations
+      ~depth_variables
       ~used_closure_vars
   in
   let typing_env =
@@ -211,12 +226,17 @@ let update_for_pack0 ~pack_units ~pack t =
     Continuation.Map.map (Continuation.map_compilation_unit update_cu)
       t.table_data.continuations
   in
+  let depth_variables =
+    Depth_variable.Map.map (Depth_variable.map_compilation_unit update_cu)
+      t.table_data.depth_variables
+  in
   let table_data =
     { symbols;
       variables;
       simples;
       consts;
       code_ids;
+      depth_variables;
       continuations;
     }
   in

@@ -824,6 +824,7 @@ and close_one_function acc ~external_env ~by_closure_id decl
   let my_closure = Variable.create "my_closure" in
   let closure_id = Function_decl.closure_id decl in
   let my_closure_id = closure_id in
+  let depth = Depth_variable.create "depth" in
   let our_let_rec_ident = Function_decl.let_rec_ident decl in
   let contains_closures = Function_decl.contains_closures decl in
   let compilation_unit = Compilation_unit.get_current_exn () in
@@ -845,7 +846,8 @@ and close_one_function acc ~external_env ~by_closure_id decl
      Note that free variables corresponding to predefined exception
      identifiers have been filtered out by [close_functions], above.
   *)
-  let var_within_closures_to_bind, var_within_closures_for_idents =
+  let (var_within_closures_to_bind : Var_within_closure.t Variable.Map.t),
+      (var_within_closures_for_idents : Variable.t Ident.Map.t) =
     Ident.Map.fold
       (fun id var_within_closures_for_idents (to_bind, var_for_ident) ->
         let var = Variable.create_with_same_name_as_ident id in
@@ -991,7 +993,7 @@ and close_one_function acc ~external_env ~by_closure_id decl
   let params_and_body =
     Function_params_and_body.create
       ~return_continuation:(Function_decl.return_continuation decl)
-      exn_continuation params ~dbg ~body ~my_closure ~free_names_of_body:Unknown
+      exn_continuation params ~dbg ~body ~my_closure ~depth ~free_names_of_body:Unknown
   in
   let params_arity = Kinded_parameter.List.arity_with_subkinds params in
   let is_tupled =

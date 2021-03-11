@@ -20,11 +20,13 @@ open! Flambda.Import
 
 type simplified_named =
   | Simple of Simple.t
+  | Depth of Depth_expr.t
   | Prim of Flambda_primitive.t * Debuginfo.t
   | Set_of_closures of Set_of_closures.t
 
 let to_named = function
   | Simple simple -> Named.create_simple simple
+  | Depth depth -> Named.create_depth depth
   | Prim (prim, dbg) -> Named.create_prim prim dbg
   | Set_of_closures set -> Named.create_set_of_closures set
 
@@ -42,6 +44,9 @@ let reachable (named : Named.t) =
     | Simple simple ->
        Simple simple,
        Cost_metrics.from_size (Code_size.simple simple)
+    | Depth depth ->
+       Depth depth,
+       Cost_metrics.zero
     | Prim (prim, dbg) ->
        Prim (prim, dbg),
        Cost_metrics.from_size (Code_size.prim prim)
@@ -68,6 +73,9 @@ let reachable_with_known_free_names ~find_code_characteristics
     | Simple simple ->
        Simple simple,
        Cost_metrics.from_size (Code_size.simple simple)
+    | Depth depth ->
+       Depth depth,
+       Cost_metrics.from_size Code_size.zero
     | Prim (prim, dbg) ->
        Prim (prim, dbg),
        Cost_metrics.from_size (Code_size.prim prim)

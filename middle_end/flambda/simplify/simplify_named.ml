@@ -40,7 +40,7 @@ let record_any_symbol_projection dacc (defining_expr : Simplified_named.t)
     (not (DE.at_unit_toplevel (DA.denv dacc)))
       && match defining_expr with
          | Reachable { named = Prim _; _ } -> true
-         | Reachable { named = (Simple _ | Set_of_closures _); _ }
+         | Reachable { named = (Simple _ | Depth _ | Set_of_closures _); _ }
          | Invalid _ -> false
   in
   let proj =
@@ -158,6 +158,11 @@ let simplify_named0 dacc (bindable_let_bound : Bindable_let_bound.t)
     in
     Simplify_named_result.have_simplified_to_single_term dacc
       bindable_let_bound defining_expr ~original_defining_expr:named
+      bindable_let_bound defining_expr ~original_defining_expr:named
+  | Depth _ ->
+    (* CR lmaurer: Substitute for depth variables? *)
+    Simplify_named_result.have_simplified_to_single_term dacc
+      bindable_let_bound (Simplified_named.reachable named)
   | Prim (prim, dbg) ->
     let bound_var = Bindable_let_bound.must_be_singleton bindable_let_bound in
     let term, env_extension, simplified_args, dacc =

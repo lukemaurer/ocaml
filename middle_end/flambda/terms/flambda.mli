@@ -90,6 +90,8 @@ end and Named : sig
       (** Things that fit in a register (variables, symbols, constants).
           These do not have to be [Let]-bound but are allowed here for
           convenience. *)
+    | Depth of Depth_expr.t
+      (** Recursion depth. *)
     | Prim of Flambda_primitive.t * Debuginfo.t
       (** Primitive operations (arithmetic, memory access, allocation, etc). *)
     | Set_of_closures of Set_of_closures.t
@@ -104,6 +106,9 @@ end and Named : sig
 
   (** Convert a register-width value into the defining expression of a [Let]. *)
   val create_simple : Simple.t -> t
+
+  (** Convert a depth expression into the defining expression of a [Let]. *)
+  val create_depth : Depth_expr.t -> t
 
   (** Convert a primitive, with associated debugging information, into the
       defining expression of a [Let]. *)
@@ -426,6 +431,7 @@ end and Function_params_and_body : sig
     -> body:Expr.t
     -> free_names_of_body:Name_occurrences.t Or_unknown.t
     -> my_closure:Variable.t
+    -> depth:Depth_variable.t
     -> t
 
   (** Choose a member of the alpha-equivalence class to enable examination
@@ -445,6 +451,7 @@ end and Function_params_and_body : sig
       -> body:Expr.t
       -> my_closure:Variable.t
       -> is_my_closure_used:bool Or_unknown.t
+      -> depth:Depth_variable.t
       -> 'a)
     -> 'a
 
@@ -466,6 +473,7 @@ end and Function_params_and_body : sig
       -> body1:Expr.t
       -> body2:Expr.t
       -> my_closure:Variable.t
+      -> depth:Depth_variable.t
       -> 'a)
     -> 'a
 

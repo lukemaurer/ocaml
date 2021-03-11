@@ -14,44 +14,46 @@
 
 type t =
   | Id
-  | Non_id of {
-      from_depth : int;
-      to_depth : int;
+  | Change_depth of {
+      from : Depth_expr.t;
+      to_ : Depth_expr.t;
     }
 
 let id = Id
 
-let change_depth ~from:from_depth ~to_:to_depth =
-  if from_depth = to_depth then Id else Non_id { from_depth; to_depth }
+let change_depth ~from ~to_ = Change_depth { from; to_ }
 
-let is_id = function
+let is_obviously_id = function
   | Id -> true
-  | Non_id _ -> false
+  | Change_depth _ -> false
 
 let inverse = function
   | Id -> Id
-  | Non_id { from_depth; to_depth } ->
-    Non_id { from_depth = to_depth; to_depth = from_depth }
+  | Change_depth { from; to_ } ->
+    Change_depth { from = to_; to_ = from }
 
 let print ppf = function
   | Id ->
     Format.fprintf ppf "@<0>%sid@<0>%s"
       (Flambda_colours.elide ())
       (Flambda_colours.normal ())
-  | Non_id { from_depth; to_depth; } ->
-    Format.fprintf ppf "@<0>%s@[<hov 1>(depth@ %d ->@ %d)@]@<0>%s"
+  | Change_depth { from; to_; } ->
+    Format.fprintf ppf "@<0>%s@[<hov 1>(depth@ %a ->@ %a)@]@<0>%s"
       (Flambda_colours.coercion ())
-      from_depth to_depth
+      Depth_expr.print from
+      Depth_expr.print to_
       (Flambda_colours.normal ())
 
 let compose t1 ~then_:t2 =
   match t1, t2 with
   | Id, _ -> Some t2
   | _, Id -> Some t1
-  | Non_id { from_depth = from_depth1; to_depth = to_depth1 },
-    Non_id { from_depth = from_depth2; to_depth = to_depth2 } ->
-    if to_depth1 = from_depth2 then
-      Some (change_depth ~from:from_depth1 ~to_:to_depth2)
+  | Change_depth { from = from1; to_ = to1 },
+    Change_depth { from = from2; to_ = to2 } ->
+    (* CR lmaurer: Doesn't feel quite right to call equal on something that
+       might have a free variable. *)
+    if Depth_expr.equal to1 from2 then
+      Some (change_depth ~from:from1 ~to_:to2)
     else
       None
 
@@ -64,11 +66,16 @@ let compose_exn t1 ~then_:t2 =
 let equal t1 t2 =
   match t1, t2 with
   | Id, Id -> true
-  | Non_id { from_depth = from_depth1; to_depth = to_depth1 },
-    Non_id { from_depth = from_depth2; to_depth = to_depth2 } ->
-    from_depth1 = from_depth2 && to_depth1 = to_depth2
+  | Change_depth { from = from1; to_ = to1 },
+    Change_depth { from = from2; to_ = to2 } ->
+    Depth_expr.equal from1 from2 && Depth_expr.equal to1 to2
   | _, _ -> false
 
 let hash = Hashtbl.hash
 
-let apply_to_rec_info _ rec_info = rec_info
+let apply_to_depth t depth =
+  match t with
+  | Id ->
+    Some depth
+  | Change_depth { from; to_ } ->
+    if Depth_expr.equal from depth then Some to_ else None

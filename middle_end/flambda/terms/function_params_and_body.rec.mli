@@ -17,9 +17,9 @@
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
 (** A name abstraction that comprises a function's parameters (together with
-    any relations between them), the code of the function, and the
-    [my_closure] variable.  It also includes the return and exception
-    continuations.
+    any relations between them), the code of the function, the [my_closure]
+    variable, and the recursion depth.  It also includes the return and
+    exception continuations.
 
     From the body of the function, accesses to variables within the closure
     need to go via a [Project_var] (from [my_closure]); accesses to any other
@@ -42,6 +42,7 @@ val create
   -> body:Expr.t
   -> free_names_of_body:Name_occurrences.t Or_unknown.t
   -> my_closure:Variable.t
+  -> depth:Depth_variable.t
   -> t
 
 (** Choose a member of the alpha-equivalence class to enable examination
@@ -60,6 +61,7 @@ val pattern_match
     -> body:Expr.t
     -> my_closure:Variable.t
     -> is_my_closure_used:bool Or_unknown.t
+    -> depth:Depth_variable.t
     -> 'a)
   -> 'a
 
@@ -81,6 +83,7 @@ val pattern_match_pair
     -> body1:Expr.t
     -> body2:Expr.t
     -> my_closure:Variable.t
+    -> depth:Depth_variable.t
     -> 'a)
   -> 'a
 

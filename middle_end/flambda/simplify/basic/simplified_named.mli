@@ -22,6 +22,7 @@ open! Flambda.Import
     such constants are propagated separately after simplification. *)
 type simplified_named = private
   | Simple of Simple.t
+  | Depth of Depth_expr.t
   | Prim of Flambda_primitive.t * Debuginfo.t
   | Set_of_closures of Set_of_closures.t
 

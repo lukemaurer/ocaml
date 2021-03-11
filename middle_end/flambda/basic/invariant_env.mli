@@ -42,6 +42,7 @@ val prepare_for_function_body
    : t
   -> parameters_with_kinds:(Variable.t * Flambda_kind.t) list
   -> my_closure:Variable.t
+  -> depth:Depth_variable.t
   -> return_cont:Continuation.t
   -> return_cont_arity:Flambda_arity.With_subkinds.t
   -> exception_cont:Continuation.t
@@ -52,6 +53,8 @@ val add_variable : t -> Variable.t -> Flambda_kind.t -> t
 val add_variables : t -> (Variable.t * Flambda_kind.t) list -> t
 
 val add_kinded_parameters : t -> Kinded_parameter.t list -> t
+
+val add_depth_variable : t -> Depth_variable.t -> t
 
 val add_symbol : t -> Symbol.t -> Flambda_kind.t -> t
 
@@ -117,6 +120,8 @@ val check_variables_are_bound_and_of_kind
   -> Variable.t list
   -> Flambda_kind.t
   -> unit
+
+val check_depth_variable_is_bound : t -> Depth_variable.t -> unit
 
 val check_symbol_is_bound : t -> Symbol.t -> unit
 

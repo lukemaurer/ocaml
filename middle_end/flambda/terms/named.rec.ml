@@ -18,11 +18,13 @@
 
 type t =
   | Simple of Simple.t
+  | Depth of Depth_expr.t
   | Prim of Flambda_primitive.t * Debuginfo.t
   | Set_of_closures of Set_of_closures.t
   | Static_consts of Static_const.Group.t
 
 let create_simple simple = Simple simple
+let create_depth depth = Depth depth
 let create_prim prim dbg = Prim (prim, dbg)
 let create_set_of_closures set_of_closures = Set_of_closures set_of_closures
 let create_static_consts consts = Static_consts consts
@@ -30,6 +32,7 @@ let create_static_consts consts = Static_consts consts
 let print_with_cache ~cache ppf (t : t) =
   match t with
   | Simple simple -> Simple.print ppf simple
+  | Depth depth -> Depth_expr.print ppf depth
   | Prim (prim, dbg) ->
     fprintf ppf "@[<hov 1>(%a@<0>%s%a@<0>%s)@]"
       Flambda_primitive.print prim
@@ -51,6 +54,9 @@ let invariant_returning_kind env t : Flambda_primitive.result_kind =
     match t with
     | Simple simple ->
       Singleton (E.kind_of_simple env simple)
+    | Depth depth_expr ->
+      Depth_expr.invariant env depth_expr;
+      Singleton K.fabricated
     | Set_of_closures set_of_closures ->
       Set_of_closures.invariant env set_of_closures;
       Singleton K.fabricated
@@ -71,6 +77,7 @@ let invariant env t =
 let free_names t =
   match t with
   | Simple simple -> Simple.free_names simple
+  | Depth depth -> Depth_expr.free_names depth
   | Prim (prim, _dbg) -> Flambda_primitive.free_names prim
   | Set_of_closures set -> Set_of_closures.free_names set
   | Static_consts consts -> Static_const.Group.free_names consts
@@ -81,6 +88,10 @@ let apply_renaming t perm =
     let simple' = Simple.apply_renaming simple perm in
     if simple == simple' then t
     else Simple simple'
+  | Depth depth ->
+    let depth' = Depth_expr.apply_name_permutation depth perm in
+    if depth == depth' then t
+    else Depth depth'
   | Prim (prim, dbg) ->
     let prim' = Flambda_primitive.apply_renaming prim perm in
     if prim == prim' then t
@@ -97,6 +108,7 @@ let apply_renaming t perm =
 let all_ids_for_export t =
   match t with
   | Simple simple -> Ids_for_export.from_simple simple
+  | Depth depth -> Depth_expr.all_ids_for_export depth
   | Prim (prim, _dbg) -> Flambda_primitive.all_ids_for_export prim
   | Set_of_closures set -> Set_of_closures.all_ids_for_export set
   | Static_consts consts -> Static_const.Group.all_ids_for_export consts
@@ -139,6 +151,7 @@ let unbox_value name (kind : Flambda_kind.t) dbg : t * Flambda_kind.t =
 let at_most_generative_effects (t : t) =
   match t with
   | Simple _ -> true
+  | Depth _ -> true
   | Prim (prim, _) -> Flambda_primitive.at_most_generative_effects prim
   | Set_of_closures _ -> true
   | Static_consts _ -> true
@@ -165,15 +178,15 @@ let dummy_value (kind : K.t) : t =
 let is_dynamically_allocated_set_of_closures t =
   match t with
   | Set_of_closures _ -> true
-  | Simple _ | Prim _ | Static_consts _ -> false
+  | Simple _ | Depth _ | Prim _ | Static_consts _ -> false
 
 let is_static_consts t =
   match t with
   | Static_consts _ -> true
-  | Simple _ | Prim _ | Set_of_closures _ -> false
+  | Simple _ | Depth _ | Prim _ | Set_of_closures _ -> false
 
 let must_be_static_consts t =
   match t with
   | Static_consts consts -> consts
-  | Simple _ | Prim _ | Set_of_closures _ ->
+  | Simple _ | Depth _ | Prim _ | Set_of_closures _ ->
     Misc.fatal_errorf "Must be [Static_consts], but is not: %a" print t

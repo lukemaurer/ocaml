@@ -23,6 +23,7 @@ module Continuations = (Permutation.Make [@inlined hint]) (Continuation)
 module Variables = (Permutation.Make [@inlined hint]) (Variable)
 module Code_ids = (Permutation.Make [@inlined hint]) (Code_id)
 module Symbols = (Permutation.Make [@inlined hint]) (Symbol)
+module Depth_variables = (Permutation.Make [@inlined hint]) (Depth_variable)
 
 module Const = Reg_width_things.Const
 module Simple = Reg_width_things.Simple
@@ -37,6 +38,7 @@ module Import_map : sig
     -> consts : Const.t Const.Map.t
     -> code_ids : Code_id.t Code_id.Map.t
     -> continuations : Continuation.t Continuation.Map.t
+    -> depth_variables : Depth_variable.t Depth_variable.Map.t
     -> used_closure_vars : Var_within_closure.Set.t
     -> t
 
@@ -48,6 +50,7 @@ module Import_map : sig
   val simple : t -> Simple.t -> Simple.t
   val code_id : t -> Code_id.t -> Code_id.t
   val continuation : t -> Continuation.t -> Continuation.t
+  val depth_variable : t -> Depth_variable.t -> Depth_variable.t
   val closure_var_is_used : t -> Var_within_closure.t -> bool
 end = struct
   type t = {
@@ -57,6 +60,7 @@ end = struct
     consts : Const.t Const.Map.t;
     code_ids : Code_id.t Code_id.Map.t;
     continuations : Continuation.t Continuation.Map.t;
+    depth_variables : Depth_variable.t Depth_variable.Map.t;
     used_closure_vars : Var_within_closure.Set.t;
     (* CR vlaviron: [used_closure_vars] is here because we need to rewrite the
        types to remove occurrences of unused closure variables, as otherwise
@@ -72,7 +76,7 @@ end = struct
 
   let is_empty
         { symbols; variables; simples; consts; code_ids; continuations;
-          used_closure_vars;
+          depth_variables; used_closure_vars;
         } =
     Symbol.Map.is_empty symbols
     && Variable.Map.is_empty variables
@@ -80,6 +84,7 @@ end = struct
     && Const.Map.is_empty consts
     && Code_id.Map.is_empty code_ids
     && Continuation.Map.is_empty continuations
+    && Depth_variable.Map.is_empty depth_variables
     && Var_within_closure.Set.is_empty used_closure_vars
 
   let create
@@ -89,6 +94,7 @@ end = struct
       ~consts
       ~code_ids
       ~continuations
+      ~depth_variables
       ~used_closure_vars =
     { symbols;
       variables;
@@ -96,6 +102,7 @@ end = struct
       consts;
       code_ids;
       continuations;
+      depth_variables;
       used_closure_vars;
     }
 
@@ -125,11 +132,16 @@ end = struct
     | exception Not_found -> orig
 
   let simple t simple =
-    (* [t.simples] only holds those [Simple]s with [Rec_info] (analogously
+    (* [t.simples] only holds those [Simple]s with [Coercion]s (analogously
        to the grand table of [Simple]s, see reg_width_things.ml). *)
     match Simple.Map.find simple t.simples with
     | simple -> simple
     | exception Not_found -> simple
+
+  let depth_variable t dv =
+    match Depth_variable.Map.find dv t.depth_variables with
+    | dv -> dv
+    | exception Not_found -> dv
 
   let closure_var_is_used t var =
     Var_within_closure.Set.mem var t.used_closure_vars
@@ -138,6 +150,7 @@ end
 type t = {
   continuations : Continuations.t;
   variables : Variables.t;
+  depth_variables : Depth_variables.t;
   code_ids : Code_ids.t;
   symbols : Symbols.t;
   import_map : Import_map.t option;
@@ -146,37 +159,42 @@ type t = {
 let empty =
   { continuations = Continuations.empty;
     variables = Variables.empty;
+    depth_variables = Depth_variables.empty;
     code_ids = Code_ids.empty;
     symbols = Symbols.empty;
     import_map = None;
   }
 
 let create_import_map ~symbols ~variables ~simples ~consts ~code_ids
-      ~continuations ~used_closure_vars =
+      ~continuations ~depth_variables ~used_closure_vars =
   let import_map =
     Import_map.create ~symbols ~variables ~simples ~consts ~code_ids
-      ~continuations ~used_closure_vars
+      ~continuations ~depth_variables ~used_closure_vars
   in
   if Import_map.is_empty import_map then empty
   else { empty with import_map = Some import_map; }
 
 let print ppf
-      { continuations; variables; code_ids; symbols; import_map = _; } =
+      { continuations; variables; depth_variables; code_ids; symbols;
+        import_map = _; } =
   Format.fprintf ppf "@[<hov 1>(\
       @[<hov 1>(continuations@ %a)@]@ \
       @[<hov 1>(variables@ %a)@])@ \
+      @[<hov 1>(depth_variables@ %a)@]@ \
       @[<hov 1>(code_ids@ %a)@])@ \
       @[<hov 1>(symbols@ %a)@])\
       @]"
     Continuations.print continuations
     Variables.print variables
+    Depth_variables.print depth_variables
     Code_ids.print code_ids
     Symbols.print symbols
 
 let is_empty
-      { continuations; variables; code_ids; symbols; import_map; } =
+      { continuations; variables; depth_variables; code_ids; symbols; import_map; } =
   Continuations.is_empty continuations
   && Variables.is_empty variables
+  && Depth_variables.is_empty depth_variables
   && Code_ids.is_empty code_ids
   && Symbols.is_empty symbols
   && match import_map with
@@ -188,6 +206,7 @@ let compose0
         ({ continuations = continuations2;
            variables = variables2;
            code_ids = code_ids2;
+           depth_variables = depth_variables2;
            symbols = symbols2;
            import_map = import_map2;
          } as second)
@@ -195,12 +214,15 @@ let compose0
         ({ continuations = continuations1;
            variables = variables1;
            code_ids = code_ids1;
+           depth_variables = depth_variables1;
            symbols = symbols1;
            import_map = import_map1;
          } as first) =
   { continuations =
       Continuations.compose ~second:continuations2 ~first:continuations1;
     variables = Variables.compose ~second:variables2 ~first:variables1;
+    depth_variables =
+      Depth_variables.compose ~second:depth_variables2 ~first:depth_variables1;
     code_ids = Code_ids.compose ~second:code_ids2 ~first:code_ids1;
     symbols = Symbols.compose ~second:symbols2 ~first:symbols1;
     (* The process of simplification of terms together with the collection of
@@ -337,6 +359,23 @@ let apply_simple t simple =
     ~const:(fun cst ->
       assert (not (Simple.has_coercion simple));
       Simple.const (apply_const t cst))
+
+let add_depth_variable t dv1 dv2 =
+  { t with
+    depth_variables = Depth_variables.compose_one ~first:t.depth_variables dv1 dv2 }
+
+let add_fresh_depth_variable t dv1 ~guaranteed_fresh:dv2 =
+  { t with
+    depth_variables =
+      Depth_variables.compose_one_fresh t.depth_variables dv1 ~fresh:dv2 }
+
+let apply_depth_variable t dv =
+  let dv =
+    match t.import_map with
+    | None -> dv
+    | Some import_map -> Import_map.depth_variable import_map dv
+  in
+  Depth_variables.apply t.depth_variables dv
 
 let closure_var_is_used t closure_var =
   match t.import_map with

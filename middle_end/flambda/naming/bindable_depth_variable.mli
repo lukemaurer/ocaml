@@ -2,9 +2,11 @@
 (*                                                                        *)
 (*                                 OCaml                                  *)
 (*                                                                        *)
-(*                   Mark Shinwell, Jane Street Europe                    *)
+(*                       Pierre Chambart, OCamlPro                        *)
+(*           Mark Shinwell and Leo White, Jane Street Europe              *)
 (*                                                                        *)
-(*   Copyright 2019 Jane Street Group LLC                                 *)
+(*   Copyright 2018--2021 OCamlPro SAS                                    *)
+(*   Copyright 2018--2021 Jane Street Group LLC                           *)
 (*                                                                        *)
 (*   All rights reserved.  This file is distributed under the terms of    *)
 (*   the GNU Lesser General Public License version 2.1, with the          *)
@@ -12,26 +14,11 @@
 (*                                                                        *)
 (**************************************************************************)
 
+(** A [Depth_variable] equipped with operations that mean it can be used in
+    binding position within a [Name_abstraction] value. *)
+
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
-type t
+type t = Depth_variable.t
 
-val change_depth : from:Depth_expr0.t -> to_:Depth_expr0.t -> t
-
-val id : t
-
-val is_obviously_id : t -> bool
-
-val inverse : t -> t
-
-val compose : t -> then_:t -> t option
-
-val compose_exn : t -> then_:t -> t
-
-val print : Format.formatter -> t -> unit
-
-val equal : t -> t -> bool
-
-val hash : t -> int
-
-val apply_to_depth : t -> Depth_expr0.t -> Depth_expr0.t option
+include Bindable.S with type t := t

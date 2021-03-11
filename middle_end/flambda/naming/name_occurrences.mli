@@ -63,6 +63,10 @@ val add_name : t -> Name.t -> Name_mode.t -> t
 
 val add_closure_var : t -> Var_within_closure.t -> Name_mode.t -> t
 
+val singleton_depth_variable : Depth_variable.t -> Name_mode.t -> t
+
+val add_depth_variable : t -> Depth_variable.t -> Name_mode.t -> t
+
 val singleton_code_id : Code_id.t -> Name_mode.t -> t
 
 (** If the use of the code ID is in a "newer version of" field, use
@@ -116,6 +120,8 @@ val continuations_including_in_trap_actions : t -> Continuation.Set.t
 val closure_vars : t -> Var_within_closure.Set.t
 
 val symbols : t -> Symbol.Set.t
+
+val depth_variables : t -> Depth_variable.Set.t
 
 val code_ids : t -> Code_id.Set.t
 

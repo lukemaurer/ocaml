@@ -305,7 +305,8 @@ end
 module C = Context_for_multiple_sets_of_closures
 
 let dacc_inside_function context ~used_closure_vars ~shareable_constants
-      ~params ~my_closure closure_id ~closure_bound_names_inside_function
+      ~params ~my_closure ~depth closure_id
+      ~closure_bound_names_inside_function
       ~inlining_arguments =
   let dacc =
     DA.map_denv (C.dacc_inside_functions context) ~f:(fun denv ->
@@ -324,6 +325,7 @@ let dacc_inside_function context ~used_closure_vars ~shareable_constants
           closure_bound_names_inside_function
       | name ->
         let name = Name_in_binding_pos.name name in
+        let denv = DE.add_depth_variable denv in
         DE.add_variable denv
           (Var_in_binding_pos.create my_closure NM.normal)
           (T.alias_type_of K.value (Simple.name name)))
@@ -363,10 +365,10 @@ let simplify_function context ~used_closure_vars ~shareable_constants
         uacc_after_upwards_traversal, inlining_arguments =
       Function_params_and_body.pattern_match params_and_body
         ~f:(fun ~return_continuation exn_continuation params ~body
-                ~my_closure ~is_my_closure_used:_ ->
+                ~my_closure ~depth ~is_my_closure_used:_ ->
           let dacc =
             dacc_inside_function context ~used_closure_vars ~shareable_constants
-              ~params ~my_closure closure_id
+              ~params ~my_closure ~depth closure_id
               ~closure_bound_names_inside_function
               ~inlining_arguments:(Code.inlining_arguments code)
           in

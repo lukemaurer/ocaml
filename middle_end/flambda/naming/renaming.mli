@@ -37,6 +37,7 @@ val create_import_map
   -> consts : Reg_width_things.Const.t Reg_width_things.Const.Map.t
   -> code_ids : Code_id.t Code_id.Map.t
   -> continuations : Continuation.t Continuation.Map.t
+  -> depth_variables : Depth_variable.t Depth_variable.Map.t
   -> used_closure_vars : Var_within_closure.Set.t
   -> t
 
@@ -92,3 +93,14 @@ val apply_simple : t -> Reg_width_things.Simple.t -> Reg_width_things.Simple.t
 
 (* CR mshinwell: See CR in the implementation about this function. *)
 val closure_var_is_used : t -> Var_within_closure.t -> bool
+
+(** Depth variables *)
+val add_depth_variable : t -> Depth_variable.t -> Depth_variable.t -> t
+
+val add_fresh_depth_variable
+   : t
+  -> Depth_variable.t
+  -> guaranteed_fresh:Depth_variable.t
+  -> t
+
+val apply_depth_variable : t -> Depth_variable.t -> Depth_variable.t

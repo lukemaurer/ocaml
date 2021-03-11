@@ -22,6 +22,8 @@ type t = private
     (** Things that fit in a register (variables, symbols, constants).
         These do not have to be [Let]-bound but are allowed here for
         convenience. *)
+  | Depth of Depth_expr.t
+    (** Recursion depth. *)
   | Prim of Flambda_primitive.t * Debuginfo.t
     (** Primitive operations (arithmetic, memory access, allocation, etc). *)
   | Set_of_closures of Set_of_closures.t
@@ -39,6 +41,9 @@ include Contains_ids.S with type t := t
 
 (** Convert a register-width value into the defining expression of a [Let]. *)
 val create_simple : Simple.t -> t
+
+(** Convert a depth expression into the defining expression of a [Let]. *)
+val create_depth : Depth_expr.t -> t
 
 (** Convert a primitive, with associated debugging information, into the
     defining expression of a [Let]. *)

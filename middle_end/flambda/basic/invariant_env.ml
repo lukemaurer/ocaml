@@ -100,12 +100,16 @@ end
 
 type t = {
   all_names_seen : Name.Set.t ref;
+  all_depth_vars_seen : Depth_variable.Set.t ref;
   all_continuations_seen : Continuation.Set.t ref;
   all_closure_ids_seen : Closure_id.Set.t ref;
   uses_of_closure_ids_seen : Closure_id.Set.t ref;
   all_var_within_closures_seen : Var_within_closure.Set.t ref;
   uses_of_var_within_closures_seen : Var_within_closure.Set.t ref;
   names : Flambda_kind.t Name.Map.t;
+  (* Using a map rather than a set so that a function like [Add_thing.add_thing]
+     can take [depth_vars], [names], or [continuations] as an argument. *)
+  depth_vars : unit Depth_variable.Map.t;
   continuations :
     (Flambda_arity.With_subkinds.t
       * continuation_kind (* * Continuation_stack.t *))
@@ -118,31 +122,56 @@ type t = {
 let create () =
   { all_names_seen = ref Name.Set.empty;
     all_continuations_seen = ref Continuation.Set.empty;
+    all_depth_vars_seen = ref Depth_variable.Set.empty;
     all_closure_ids_seen = ref Closure_id.Set.empty;
     uses_of_closure_ids_seen = ref Closure_id.Set.empty;
     all_var_within_closures_seen = ref Var_within_closure.Set.empty;
     uses_of_var_within_closures_seen = ref Var_within_closure.Set.empty;
     names = Name.Map.empty;
+    depth_vars = Depth_variable.Map.empty;
     continuations = Continuation.Map.empty;
 (*
     continuation_stack = Continuation_stack.var ();
 *)
   }
 
+module Add_thing (Thing : Identifiable.S) : sig
+  val add_thing
+     : what:string
+    -> all_seen:Thing.Set.t ref
+    -> current_scope:'data Thing.Map.t
+    -> Thing.t
+    -> 'data
+    -> 'data Thing.Map.t
+end = struct
+  let add_thing ~what ~all_seen ~current_scope thing data =
+    if Thing.Map.mem thing current_scope then begin
+      Misc.fatal_errorf "Duplicate binding of %s %a which is already \
+          bound in the current scope"
+        what
+        Thing.print thing
+    end;
+    if Thing.Set.mem thing !all_seen then begin
+      Misc.fatal_errorf "Duplicate binding of %s %a which is bound \
+          in some other scope"
+        what
+        Thing.print thing
+    end;
+    all_seen := Thing.Set.add thing !all_seen;
+    Thing.Map.add thing data current_scope
+end [@@inline always]
+
+module Add_name = Add_thing(Name)
+
 let add_name t name kind =
 (*Format.eprintf "add_variable %a :: %a\n%s\n%!"
   Variable.print var Flambda_kind.print kind
   (Printexc.raw_backtrace_to_string (Printexc.get_callstack 50));*)
-  if Name.Map.mem name t.names then begin
-    Misc.fatal_errorf "Duplicate binding of name %a which is already \
-        bound in the current scope"
-      Name.print name
-  end;
-  if Name.Set.mem name !(t.all_names_seen) then begin
-    Misc.fatal_errorf "Duplicate binding of name %a which is bound \
-        in some other scope"
-      Name.print name
-  end;
+  let names =
+    Add_name.add_thing name kind ~what:"name"
+      ~all_seen:t.all_names_seen ~current_scope:t.names
+  in
+  { t with names; }
 (*
   let compilation_unit = Compilation_unit.get_current_exn () in
   if not (Name.in_compilation_unit name compilation_unit) then begin
@@ -152,10 +181,6 @@ let add_name t name kind =
       Name.print name
   end;
 *)
-  t.all_names_seen := Name.Set.add name !(t.all_names_seen);
-  { t with
-    names = Name.Map.add name kind t.names;
-  }
 
 let add_variable t var kind =
   add_name t (Name.var var) kind
@@ -170,18 +195,19 @@ let add_kinded_parameters t kinded_params =
     t
     kinded_params
 
+module Add_depth_variable = Add_thing(Depth_variable)
+
+let add_depth_variable t depth_var =
+  let depth_vars =
+    Add_depth_variable.add_thing depth_var ()
+      ~what:"depth variable"
+      ~all_seen:t.all_depth_vars_seen
+      ~current_scope:t.depth_vars
+  in
+  { t with depth_vars }
+
 let add_symbol t sym kind =
   let name = Name.symbol sym in
-  if Name.Map.mem name t.names then begin
-    Misc.fatal_errorf "Duplicate binding of symbol %a which is already \
-        bound in the current scope"
-      Symbol.print sym
-  end;
-  if Name.Set.mem name !(t.all_names_seen) then begin
-    Misc.fatal_errorf "Duplicate binding of symbol %a which is bound \
-        in some other scope"
-      Symbol.print sym
-  end;
   let compilation_unit = Compilation_unit.get_current_exn () in
   if not (Symbol.in_compilation_unit sym compilation_unit) then begin
     Misc.fatal_errorf "Binding occurrence of symbol %a cannot occur in \
@@ -189,32 +215,29 @@ let add_symbol t sym kind =
         unit"
       Symbol.print sym
   end;
-  t.all_names_seen := Name.Set.add name !(t.all_names_seen);
-  { t with
-    names = Name.Map.add name kind t.names;
-  }
+  let names =
+    Add_name.add_thing name kind ~what:"symbol"
+      ~all_seen:t.all_names_seen ~current_scope:t.names
+  in
+  { t with names }
+
+module Add_continuation = Add_thing(Continuation)
 
 let add_continuation t cont arity kind (* stack *) =
-  if Continuation.Map.mem cont t.continuations then begin
-    Misc.fatal_errorf "Duplicate binding of continuation %a which is already \
-        bound in the current scope"
-      Continuation.print cont
-  end;
-  if Continuation.Set.mem cont !(t.all_continuations_seen) then begin
-    Misc.fatal_errorf "Duplicate binding of continuation %a which is bound \
-        in some other scope"
-      Continuation.print cont
-  end;
-  t.all_continuations_seen :=
-    Continuation.Set.add cont !(t.all_continuations_seen);
-  { t with
-    continuations =
-      Continuation.Map.add cont (arity, kind (*, stack *)) t.continuations;
-  }
+  let continuations =
+    Add_continuation.add_thing cont (arity, kind (*, stack *))
+      ~what:"continuation"
+      ~all_seen:t.all_continuations_seen
+      ~current_scope:t.continuations
+  in
+  { t with continuations; }
 
 let name_is_bound t name = Name.Map.mem name t.names
 
 let variable_is_bound t var = Name.Map.mem (Name.var var) t.names
+
+let depth_variable_is_bound t depth_var =
+  Depth_variable.Map.mem depth_var t.depth_vars
 
 let check_name_is_bound t name =
   if not (name_is_bound t name) then begin
@@ -272,6 +295,11 @@ let check_variables_are_bound_and_of_kind t vars desired_kind =
   List.iter (fun var ->
       check_variable_is_bound_and_of_kind t var desired_kind)
     vars
+
+let check_depth_variable_is_bound t depth_var =
+  if not (depth_variable_is_bound t depth_var) then begin
+    Misc.fatal_errorf "Unbound depth variable %a" Depth_variable.print depth_var
+  end
 
 let check_symbol_is_bound t sym =
   check_name_is_bound t (Name.symbol sym)
@@ -350,7 +378,7 @@ let var_within_closures_not_declared t =
   Var_within_closure.Set.diff !(t.uses_of_var_within_closures_seen)
     !(t.all_var_within_closures_seen)
 
-let prepare_for_function_body t ~parameters_with_kinds ~my_closure
+let prepare_for_function_body t ~parameters_with_kinds ~my_closure ~depth
       ~return_cont ~return_cont_arity ~exception_cont =
   (* CR mshinwell for pchambart: Is one continuation stack correct now that
      we have exception continuations? *)
@@ -368,9 +396,11 @@ let prepare_for_function_body t ~parameters_with_kinds ~my_closure
       continuations
   in
   let names = Name.symbols_only_map t.names in
+  let depth_vars = Depth_variable.Map.singleton depth () in
   let t =
     { t with
       names;
+      depth_vars;
       continuations;
 (*
       continuation_stack;

@@ -23,6 +23,7 @@ type t = {
   consts : Const.Set.t;
   code_ids : Code_id.Set.t;
   continuations : Continuation.Set.t;
+  depth_variables : Depth_variable.Set.t;
 }
 
 let empty = {
@@ -32,6 +33,7 @@ let empty = {
   consts = Const.Set.empty;
   code_ids = Code_id.Set.empty;
   continuations = Continuation.Set.empty;
+  depth_variables = Depth_variable.Set.empty;
 }
 
 let create
@@ -41,6 +43,7 @@ let create
     ?(consts = Const.Set.empty)
     ?(code_ids = Code_id.Set.empty)
     ?(continuations = Continuation.Set.empty)
+    ?(depth_variables = Depth_variable.Set.empty)
     () =
   { symbols;
     variables;
@@ -48,6 +51,7 @@ let create
     consts;
     code_ids;
     continuations;
+    depth_variables;
   }
 
 let singleton_code_id code_id =
@@ -55,6 +59,9 @@ let singleton_code_id code_id =
 
 let singleton_continuation cont =
   create ~continuations:(Continuation.Set.singleton cont) ()
+
+let singleton_depth_variable depth_variable =
+  create ~depth_variables:(Depth_variable.Set.singleton depth_variable) ()
 
 let singleton_symbol symbol =
   create ~symbols:(Symbol.Set.singleton symbol) ()
@@ -75,9 +82,7 @@ let add_name t name =
 
 let add_simple t simple =
   let simples =
-    match Simple.coercion simple with
-    | Id -> t.simples
-    | _ -> Simple.Set.add simple t.simples
+    if (Simple.has_coercion simple) then Simple.Set.add simple t.simples else t.simples
   in
   let t = { t with simples; } in
   Simple.pattern_match simple
@@ -90,13 +95,13 @@ let add_code_id t code_id =
 let add_continuation t continuation =
   { t with continuations = Continuation.Set.add continuation t.continuations }
 
+let add_depth_variable t depth_variable =
+  { t with depth_variables =
+        Depth_variable.Set.add depth_variable t.depth_variables }
+
 let from_simple simple =
   let simples =
-    match Simple.coercion simple with
-    | Id ->
-      (* This simple will not be in the grand_table_of_simples *)
-      Simple.Set.empty
-    | _ -> Simple.Set.singleton simple
+    if Simple.has_coercion simple then Simple.Set.singleton simple else Simple.Set.empty
   in
   Simple.pattern_match simple
     ~const:(fun const ->
@@ -121,6 +126,8 @@ let union t1 t2 =
     consts = Const.Set.union t1.consts t2.consts;
     code_ids = Code_id.Set.union t1.code_ids t2.code_ids;
     continuations = Continuation.Set.union t1.continuations t2.continuations;
+    depth_variables =
+      Depth_variable.Set.union t1.depth_variables t2.depth_variables;
   }
 
 let rec union_list ts =
