@@ -243,19 +243,17 @@ module Make (Head : Type_head_intf.S
 
   let all_aliases_of env simple_opt ~in_env =
     match simple_opt with
-    | None -> Simple.Map.empty
+    | None -> []
     | Some simple ->
       let simples =
-        Simple.Map.add simple { Aliases.coercion_to_canonical = Coercion.id; } (
-          TE.aliases_of_simple_allowable_in_types env simple)
+        simple :: TE.aliases_of_simple_allowable_in_types env simple
       in
       (*
       Format.eprintf "Aliases of %a are: %a\n%!"
         Simple.print simple
         Simple.Set.print simples;
       *)
-      Simple.Map.filter (fun simple _ ->
-          Typing_env.mem_simple in_env simple)
+      List.filter (fun simple -> Typing_env.mem_simple in_env simple)
         simples
 
   let [@inline always] get_canonical_simples_and_expand_heads ~force_to_kind
