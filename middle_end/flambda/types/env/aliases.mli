@@ -18,12 +18,6 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
-(* CR lmaurer: Maybe we should similarly have a type [canonical] isomorphic
-   to [Simple.t]? *)
-type coercion_to_canonical = {
-  coercion_to_canonical : Coercion.t;
-} [@@ocaml.unboxed]
-
 type t
 
 include Contains_ids.S with type t := t
@@ -36,8 +30,8 @@ val empty : t
 
 type add_result = private {
   t : t;
-  canonical_element : Simple.t;
-  alias_of_demoted_element : Simple.t;
+  canonical_element : Simple.t; (* has no coercion *)
+  alias_of_demoted_element : Simple.t; (* has no coercion *)
   coercion_from_alias_of_demoted_to_canonical : Coercion.t;
 }
 
@@ -47,7 +41,7 @@ val add
   -> binding_time_and_mode1:Binding_time.With_name_mode.t
   -> element2:Simple.t
   -> binding_time_and_mode2:Binding_time.With_name_mode.t
-  -> add_result
+  -> add_result Or_bottom.t
 
 val mem : t -> Simple.t -> bool
 
@@ -58,15 +52,44 @@ val get_canonical_element_exn
   -> Simple.t
   -> Name_mode.t
   -> min_name_mode:Name_mode.t
-  -> Simple.t * coercion_to_canonical
+  -> Simple.t
 
-(** [get_aliases] always returns the supplied element in the result set. *)
-val get_aliases : t -> Simple.t -> coercion_to_canonical Simple.Map.t
+module Alias_set : sig
+  (** The set of aliases of one particular [Simple.t], or an intersection of
+      such sets. *)
+  type t
+
+  val empty : t
+
+  val singleton : Simple.t -> t
+
+  val get_singleton : t -> Simple.t option
+
+  val apply_coercion_to_all : t -> Coercion.t -> t Or_bottom.t
+
+  val inter : t -> t -> t
+
+  val filter : t -> f:(Simple.t -> bool) -> t
+
+  (** Return the best alias in the set, where constants are better than
+      symbols, which are better than variables, and ties are broken
+      (arbitrarily) by [Simple.compare]. Returns [None] if the alias set is
+      empty. *)
+  val find_best : t -> Simple.t option
+
+  val print : Format.formatter -> t -> unit
+end
+
+(** [get_aliases] always includes the supplied element in the alias set. *)
+val get_aliases
+   : t
+  -> Simple.t
+  -> Alias_set.t
 
 val get_canonical_ignoring_name_mode
    : t
   -> Name.t
-  -> Simple.t * coercion_to_canonical
+  -> Simple.t
 
 val merge : t -> t -> t
 

@@ -243,20 +243,19 @@ module Make (Head : Type_head_intf.S
 
   let all_aliases_of env simple_opt ~in_env =
     match simple_opt with
-    | None -> Simple.Map.empty
+    | None ->
+      Aliases.Alias_set.empty
     | Some simple ->
       let simples =
-        Simple.Map.add simple { Aliases.coercion_to_canonical = Coercion.id; } (
-          TE.aliases_of_simple_allowable_in_types env simple)
+        TE.aliases_of_simple_allowable_in_types env simple
       in
       (*
       Format.eprintf "Aliases of %a are: %a\n%!"
         Simple.print simple
         Simple.Set.print simples;
       *)
-      Simple.Map.filter (fun simple _ ->
-          Typing_env.mem_simple in_env simple)
-        simples
+      Aliases.Alias_set.filter simples ~f:(fun simple ->
+        Typing_env.mem_simple in_env simple)
 
   let [@inline always] get_canonical_simples_and_expand_heads ~force_to_kind
         ~to_type kind ~left_env ~left_ty ~right_env ~right_ty =
@@ -478,53 +477,27 @@ module Make (Head : Type_head_intf.S
         ~right_env:(Join_env.right_join_env join_env)
         ~right_ty:t2
     in
-    let choose_shared_alias ~shared_aliases =
-      match Simple.Set.elements shared_aliases with
-      | [] -> None
-      | shared_aliases ->
-        (* We prefer [Const]s, and if not, [Symbol]s. *)
-        (* CR mshinwell: Add this as a supported ordering in [Simple] *)
-        let shared_aliases =
-          List.sort (fun simple1 simple2 ->
-              let is_const1 = Simple.is_const simple1 in
-              let is_const2 = Simple.is_const simple2 in
-              match is_const1, is_const2 with
-              | true, false -> -1
-              | false, true -> 1
-              | true, true | false, false ->
-                let is_symbol1 = Simple.is_symbol simple1 in
-                let is_symbol2 = Simple.is_symbol simple2 in
-                match is_symbol1, is_symbol2 with
-                | true, false -> -1
-                | false, true -> 1
-                | true, true | false, false ->
-                  Simple.compare simple1 simple2)
-            shared_aliases
-        in
-        Some (create_equals (List.hd shared_aliases))
-    in
+
     (* CR mshinwell: Add shortcut when the canonical simples are equal *)
     let shared_aliases =
       let shared_aliases =
+        (* CR lmaurer: Seems a bit hacky to be constructing alias sets here in
+           the trivial cases, and "find me a shared alias" sounds like a fine
+           operation to be in [Aliases], so we should figure out how to move
+           some of this logic over there. *)
         match canonical_simple1, canonical_simple2 with
-        | None, _ | _, None -> Simple.Set.empty
+        | None, _ | _, None -> Aliases.Alias_set.empty
         | Some simple1, Some simple2 ->
           if Simple.same simple1 simple2
-          then Simple.Set.singleton simple1
+          then Aliases.Alias_set.singleton simple1
           else
-            let map_keys m =
-              Simple.Map.fold (fun simple _ acc ->
-                Simple.Set.add simple acc)
-                m
-                Simple.Set.empty
-            in
-            Simple.Set.inter
+            Aliases.Alias_set.inter
               (all_aliases_of (Join_env.left_join_env join_env)
                 canonical_simple1
-                ~in_env:(Join_env.target_join_env join_env) |> map_keys)
+                ~in_env:(Join_env.target_join_env join_env))
               (all_aliases_of (Join_env.right_join_env join_env)
                 canonical_simple2
-                ~in_env:(Join_env.target_join_env join_env) |> map_keys)
+                ~in_env:(Join_env.target_join_env join_env))
       in
       match bound_name with
       | None -> shared_aliases
@@ -532,16 +505,15 @@ module Make (Head : Type_head_intf.S
         (* CR vlaviron: this ensures that we're not creating an alias
            to a different simple that is just bound_name with different
            coercion. Such an alias is forbidden. *)
-        Simple.Set.filter (fun simple ->
+        Aliases.Alias_set.filter shared_aliases ~f:(fun simple ->
             not (Simple.same simple (Simple.name bound_name)))
-          shared_aliases
     in
       (*
       Format.eprintf "Shared aliases:@ %a\n%!"
-        Simple.Set.print shared_aliases;
+        Aliases.Alias_set.print shared_aliases;
         *)
-    match choose_shared_alias ~shared_aliases with
-    | Some joined_ty -> Known (to_type joined_ty)
+    match Aliases.Alias_set.find_best shared_aliases with
+    | Some alias -> Known (to_type (create_equals alias))
     | None ->
       match canonical_simple1, canonical_simple2 with
       | Some simple1, Some simple2

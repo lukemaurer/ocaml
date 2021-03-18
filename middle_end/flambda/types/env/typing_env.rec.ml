@@ -443,7 +443,7 @@ let print_with_cache ~cache ppf
         "@[<hov 1>(\
             @[<hov 1>(defined_symbols@ %a)@]@ \
             @[<hov 1>(code_age_relation@ %a)@]@ \
-            @[<hov 1>(levels@ %a)@]\
+            @[<hov 1>(levels@ %a)@]@ \
             @[<hov 1>(aliases@ %a)@]\
             )@]"
         Symbol.Set.print defined_symbols
@@ -882,8 +882,9 @@ let rec add_equation0 t aliases name ty =
       | _ -> false
     in
     if is_concrete then begin
-      let canonical, _ =
+      let canonical =
         Aliases.get_canonical_ignoring_name_mode aliases name
+        |> Simple.without_coercion
       in
       if not (Simple.equal canonical (Simple.name name)) then begin
         Misc.fatal_errorf "Trying to add equation giving concrete type on %a \
@@ -990,39 +991,60 @@ and add_equation t name ty =
           end)
         ~const:(fun _ -> ())
   end;
-  let aliases, simple, coercion, t, ty =
+  let aliases, lhs, t, ty =
     let aliases = aliases t in
     match Type_grammar.get_alias_exn ty with
     | exception Not_found ->
       (* Equations giving concrete types may only be added to the canonical
          element as known by the alias tracker (the actual canonical, ignoring
          any name modes). *)
-      let canonical, { Aliases.coercion_to_canonical = coercion } =
+      let canonical =
         Aliases.get_canonical_ignoring_name_mode aliases name
       in
-      aliases, canonical, coercion, t, ty
+      let lhs = canonical in
+      aliases, lhs, t, ty
     | alias_of ->
+      (* Forget where [name] and [alias_of] came from---our job is now to
+         record that they're equal. In general, they have canonical expressions
+         [c_n] and [c_a], respectively, so what we ultimately need to record is
+         that [c_n] = [c_a]. Clearly, only one of them can remain canonical, so
+         we pick whichever was bound earlier. If [c_a] was bound earlier, then
+         we demote [c_n] and give [name] the type "= c_a" (which will always be
+         valid since [c_a] was bound earlier). Otherwise, we demote [c_a] and
+         give [alias_of] the type "= c_n". *)
       let alias = Simple.name name in
       let kind = Type_grammar.kind ty in
       let binding_time_and_mode_alias = binding_time_and_mode t name in
       let binding_time_and_mode_alias_of =
         binding_time_and_mode_of_simple t alias_of
       in
-      let ({ canonical_element;
-             alias_of_demoted_element;
-             t = aliases;
-             coercion_from_alias_of_demoted_to_canonical = coercion; } : Aliases.add_result) =
+      match
         Aliases.add
           aliases
           ~element1:alias
           ~binding_time_and_mode1:binding_time_and_mode_alias
           ~element2:alias_of
           ~binding_time_and_mode2:binding_time_and_mode_alias_of
-      in
-      let ty =
-        Type_grammar.alias_type_of kind canonical_element
-      in
-      aliases, alias_of_demoted_element, coercion, t, ty
+      with
+      | Bottom ->
+        let canonical =
+          Aliases.get_canonical_ignoring_name_mode aliases name
+        in
+        let lhs = canonical in
+        let ty = Type_grammar.bottom_like ty in
+        aliases, lhs, t, ty
+      | Ok { canonical_element;
+             alias_of_demoted_element;
+             t = aliases;
+             coercion_from_alias_of_demoted_to_canonical; } ->
+        let lhs =
+          Simple.with_coercion alias_of_demoted_element
+            coercion_from_alias_of_demoted_to_canonical
+        in
+        let ty =
+          Type_grammar.alias_type_of kind canonical_element
+        in
+        aliases, lhs, t, ty
   in
   (* Beware: if we're about to add the equation on a name which is different
      from the one that the caller passed in, then we need to make sure that the
@@ -1048,15 +1070,22 @@ and add_equation t name ty =
         | Ok (meet_ty, env_extension) ->
           meet_ty, add_env_extension t env_extension
     in
-    Simple.pattern_match simple ~name ~const:(fun _ -> ty, t)
+    Simple.pattern_match lhs ~name ~const:(fun _ -> ty, t)
+  in
+  (* We have [(coerce <bare_lhs> <coercion>) : <ty>].
+     Thus [<bare_lhs> : (coerce <ty> <coercion>^-1)]. *)
+  let bare_lhs = Simple.without_coercion lhs in
+  let coercion_from_bare_lhs_to_ty = Simple.coercion lhs in
+  let coercion_from_ty_to_bare_lhs =
+    Coercion.inverse coercion_from_bare_lhs_to_ty
   in
   let ty =
-    match Type_grammar.apply_coercion ty coercion with
+    match Type_grammar.apply_coercion ty coercion_from_ty_to_bare_lhs with
     | Bottom -> Type_grammar.bottom (Type_grammar.kind ty)
     | Ok ty -> ty
   in
   let [@inline always] name name = add_equation0 t aliases name ty in
-  Simple.pattern_match simple ~name ~const:(fun _ -> t)
+  Simple.pattern_match bare_lhs ~name ~const:(fun _ -> t)
 
 and add_env_extension t (env_extension : Typing_env_extension.t) =
   Typing_env_extension.fold
@@ -1242,14 +1271,8 @@ let get_canonical_simple_with_kind_exn t ?min_name_mode simple =
         print t
     end;
     raise Misc.Fatal_error
-  | alias, { coercion_to_canonical = coercion } ->
-    match Coercion.compose coercion ~then_:(Simple.coercion simple) with
-    | None -> raise Not_found
-    | Some coercion ->
-      begin match Simple.apply_coercion alias coercion with
-      | None -> raise Not_found
-      | Some simple -> simple, kind
-      end
+  | canonical ->
+    canonical, kind
 
 let get_canonical_simple_exn t ?min_name_mode simple =
   (* Duplicated from above to eliminate the allocation of the returned pair. *)
@@ -1328,41 +1351,22 @@ let get_canonical_simple_exn t ?min_name_mode simple =
         print t
     end;
     raise Misc.Fatal_error
-  | alias, { coercion_to_canonical = coercion } ->
-    match Coercion.compose coercion ~then_:(Simple.coercion simple) with
-    | None -> raise Not_found
-    | Some coercion ->
-      begin match Simple.apply_coercion alias coercion with
-      | None -> raise Not_found
-      | Some simple -> simple
-      end
+  | canonical -> canonical
 
 let get_alias_then_canonical_simple_exn t ?min_name_mode typ =
   Type_grammar.get_alias_exn typ
   |> get_canonical_simple_exn t ?min_name_mode
 
 let aliases_of_simple t ~min_name_mode simple =
-  let aliases =
-    Aliases.get_aliases (aliases t) simple
-    |> Simple.Map.filter (fun alias _coercion (* CR xclerc for xclerc: use the coercion. *) ->
-      let name_mode =
-        Binding_time.With_name_mode.name_mode
-          (binding_time_and_mode_of_simple t alias)
-      in
-      match Name_mode.compare_partial_order name_mode min_name_mode with
-      | None -> false
-      | Some c -> c >= 0)
-  in
-  let newer_coercion = Simple.coercion simple in
-  match newer_coercion with
-  | Id -> aliases
-  | _ ->
-    Simple.Map.fold (fun simple coercion simples ->
-        match Simple.apply_coercion simple newer_coercion with
-        | None -> simples
-        | Some simple -> Simple.Map.add simple coercion simples)
-      aliases
-      Simple.Map.empty
+  Aliases.get_aliases (aliases t) simple
+  |> Aliases.Alias_set.filter ~f:(fun alias ->
+    let name_mode =
+      Binding_time.With_name_mode.name_mode
+        (binding_time_and_mode_of_simple t alias)
+    in
+    match Name_mode.compare_partial_order name_mode min_name_mode with
+    | None -> false
+    | Some c -> c >= 0)
 
 let aliases_of_simple_allowable_in_types t simple =
   aliases_of_simple t ~min_name_mode:Name_mode.in_types simple
