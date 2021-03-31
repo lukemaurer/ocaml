@@ -43,7 +43,7 @@ let print ppf = function
       (Flambda_colours.coercion ())
       from_depth to_depth
       (Flambda_colours.normal ())
-    
+
 let compose t1 ~then_:t2 =
   match t1, t2 with
   | Id, _ -> Some t2

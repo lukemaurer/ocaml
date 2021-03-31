@@ -57,7 +57,7 @@ let name_abstraction () = C.fg_256 172
 
 let rec_info () = C.fg_256 249
 
-let coercion () = C.fg_256 243
+let coercion () = C.fg_256 249
 
 let error () = C.fg_256 160
 

@@ -41,7 +41,7 @@ val add
   -> binding_time_and_mode1:Binding_time.With_name_mode.t
   -> element2:Simple.t
   -> binding_time_and_mode2:Binding_time.With_name_mode.t
-  -> add_result
+  -> add_result Or_bottom.t
 
 val mem : t -> Simple.t -> bool
 
@@ -59,17 +59,28 @@ module Alias_set : sig
       such sets. *)
   type t
 
-  val apply_coercion_to_all : t -> Coercion.t -> t option
+  val empty : t
+
+  val singleton : Simple.t -> t
+
+  val get_singleton : t -> Simple.t option
+
+  val apply_coercion_to_all : t -> Coercion.t -> t Or_bottom.t
 
   val inter : t -> t -> t
 
   val filter : t -> f:(Simple.t -> bool) -> t
-  
-  val to_list : t -> Simple.t list
+
+  (** Return the best alias in the set, where constants are better than
+      symbols, which are better than variables, and ties are broken
+      (arbitrarily) by [Simple.compare]. Returns [None] if the alias set is
+      empty. *)
+  val find_best : t -> Simple.t option
+
+  val print : Format.formatter -> t -> unit
 end
 
-(** [get_aliases] always returns the supplied element in the result map or
-    as the constant. *)
+(** [get_aliases] always includes the supplied element in the alias set. *)
 val get_aliases
    : t
   -> Simple.t

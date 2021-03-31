@@ -158,6 +158,8 @@ module Simple : sig
 
   val with_coercion : t -> Coercion.t -> t
 
+  (* CR lmaurer: Should make [name] and [const] take a [coercion] argument to
+     be sure we're not dropping coercions by accident. *)
   val pattern_match
      : t
     -> name:(Name.t -> 'a)
