@@ -1034,13 +1034,11 @@ and add_equation t name ty =
         let ty = Type_grammar.bottom_like ty in
         aliases, lhs, t, ty
       | Ok { canonical_element;
-             alias_of_demoted_element;
-             t = aliases;
-             coercion_from_alias_of_demoted_to_canonical; } ->
-        let lhs =
-          Simple.with_coercion alias_of_demoted_element
-            coercion_from_alias_of_demoted_to_canonical
-        in
+             demoted_alias;
+             t = aliases; } ->
+        (* We need to change the demoted alias's type to point to the new
+           canonical element. *)
+        let lhs = demoted_alias in
         let ty =
           Type_grammar.alias_type_of kind canonical_element
         in

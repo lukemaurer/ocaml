@@ -807,21 +807,20 @@ let choose_canonical_element_to_be_demoted t ~canonical_element1
 type add_result = {
   t : t;
   canonical_element : Simple.t;
-  alias_of_demoted_element : Simple.t;
-  coercion_from_alias_of_demoted_to_canonical : Coercion.t;
+  demoted_alias : Simple.t;
 }
 
-let invariant_add_result ~original_t { canonical_element; alias_of_demoted_element; t; coercion_from_alias_of_demoted_to_canonical = _; } =
+let invariant_add_result ~original_t { canonical_element; demoted_alias; t; } =
   if !Clflags.flambda_invariant_checks then begin
     invariant t;
-    if not (Simple.equal canonical_element alias_of_demoted_element) then begin
+    if not (Simple.equal canonical_element demoted_alias) then begin
       if not (defined_earlier t canonical_element
-                ~than:alias_of_demoted_element) then begin
+                ~than:demoted_alias) then begin
         Misc.fatal_errorf "Canonical element %a should be defined earlier \
                            than %a after alias addition.@ Original alias tracker:@ %a@ \
                            Resulting alias tracker:@ %a"
           Simple.print canonical_element
-          Simple.print alias_of_demoted_element
+          Simple.print demoted_alias
           print original_t
           print t
       end
@@ -833,9 +832,9 @@ let add_alias t ~element1 ~coercion_from_element2_to_element1 ~element2 =
         ~coercion_from_element1_to_canonical_element1
         ~coercion_from_element2_to_canonical_element2
         ~coercion_from_canonical_element2_to_canonical_element1 =
-    let canonical_element, to_be_demoted, alias_of_demoted_element,
-        coercion_from_demoted_to_canonical,
-        coercion_from_alias_of_demoted_to_demoted = 
+    let canonical_element, demoted_canonical, demoted_alias,
+        coercion_from_demoted_canonical_to_canonical,
+        coercion_from_demoted_alias_to_demoted_canonical = 
       let which_element =
         choose_canonical_element_to_be_demoted t
           ~canonical_element1 ~canonical_element2
@@ -858,19 +857,22 @@ let add_alias t ~element1 ~coercion_from_element2_to_element1 ~element2 =
       add_alias_between_canonical_elements
         t
         ~canonical_element
-        ~coercion_to_canonical:coercion_from_demoted_to_canonical
-        ~to_be_demoted
+        ~coercion_to_canonical:coercion_from_demoted_canonical_to_canonical
+        ~to_be_demoted:demoted_canonical
     in
-    let coercion_from_alias_of_demoted_to_canonical =
+    let coercion_from_demoted_alias_to_canonical =
       Coercion.compose_exn
-        coercion_from_alias_of_demoted_to_demoted
-        ~then_:coercion_from_demoted_to_canonical
+        coercion_from_demoted_alias_to_demoted_canonical
+        ~then_:coercion_from_demoted_canonical_to_canonical
+    in
+    let demoted_alias =
+      Simple.with_coercion demoted_alias
+        coercion_from_demoted_alias_to_canonical
     in
     Or_bottom.map t ~f:(fun t ->
       { t;
         canonical_element;
-        alias_of_demoted_element;
-        coercion_from_alias_of_demoted_to_canonical;
+        demoted_alias;
       })
   in
   match canonical t element1, canonical t element2 with
