@@ -153,7 +153,7 @@ end = struct
                   ~pass:Inlining_report.Before_simplify
                   denv function_decl
                   ~code_id:new_code_id
-                  ())
+                  Rec_info.unknown)
               (Function_declarations.funs function_decls)
           in
           Closure_id.Map.mapi (fun closure_id _function_decl ->
@@ -465,7 +465,7 @@ let simplify_function context ~used_closure_vars ~shareable_constants
       function_decl_type
         ~pass:Inlining_report.After_simplify
         (DA.denv dacc_after_body) function_decl
-        ~params_and_body ()
+        ~params_and_body Rec_info.unknown
     in
     { function_decl;
       new_code_id;

@@ -105,7 +105,7 @@ let simplify_direct_full_application dacc apply function_decl_opt
       let apply_inlining_state = Apply.inlining_state apply in
       let decision =
         Inlining_decision.make_decision_for_call_site (DA.denv dacc)
-          ~function_decl_rec_info:()
+          ~function_decl_rec_info:Rec_info.unknown
           ~apply_inlining_state
           (Apply.inline apply)
       in

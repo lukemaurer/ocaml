@@ -218,7 +218,7 @@ end
 (* CR mshinwell: This parameter needs to be configurable *)
 let max_rec_depth = 1
 
-let make_decision_for_call_site denv ~function_decl_rec_info:()
+let make_decision_for_call_site denv ~function_decl_rec_info:_
       ~apply_inlining_state (inline : Inline_attribute.t)
       : Call_site_decision.t =
   if (not (DE.can_inline denv)) then

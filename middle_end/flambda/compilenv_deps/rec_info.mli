@@ -13,11 +13,13 @@
 (**************************************************************************)
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
-type t = unit
+type t
 
 include Identifiable.S with type t := t
 
 val initial : t
+
+val unknown : t
 
 val is_initial : t -> bool
 

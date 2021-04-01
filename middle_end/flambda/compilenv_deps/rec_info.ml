@@ -34,4 +34,6 @@ end)
 
 let initial = ()
 
+let unknown = ()
+
 let is_initial () = true

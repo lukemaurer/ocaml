@@ -52,10 +52,10 @@ module Inlinable = struct
   let is_tupled t = t.is_tupled
 
   let apply_name_permutation
-        ({ code_id; dbg = _; rec_info = (); is_tupled = _; } as t) perm =
+        ({ code_id; dbg = _; rec_info = _; is_tupled = _; } as t) perm =
     let code_id' = Name_permutation.apply_code_id perm code_id in
     if code_id == code_id' then t
-    else { t with code_id = code_id'; }
+    else { t with code_id = code_id'; rec_info = Rec_info.unknown }
 
 end
 
@@ -108,7 +108,7 @@ let print ppf t =
 let free_names (t : t) =
   match t with
   | Bottom | Unknown -> Name_occurrences.empty
-  | Ok (Inlinable { code_id; dbg = _; rec_info = (); is_tupled = _; })
+  | Ok (Inlinable { code_id; dbg = _; rec_info = _; is_tupled = _; })
   | Ok (Non_inlinable { code_id; is_tupled = _; }) ->
     Name_occurrences.add_code_id Name_occurrences.empty code_id
       Name_mode.in_types
@@ -116,7 +116,7 @@ let free_names (t : t) =
 let all_ids_for_export (t : t) =
   match t with
   | Bottom | Unknown -> Ids_for_export.empty
-  | Ok (Inlinable { code_id; dbg = _; rec_info = (); is_tupled = _; })
+  | Ok (Inlinable { code_id; dbg = _; rec_info = _; is_tupled = _; })
   | Ok (Non_inlinable { code_id; is_tupled = _; }) ->
     Ids_for_export.add_code_id Ids_for_export.empty code_id
 
@@ -178,13 +178,13 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
   | Ok (Inlinable {
       code_id = code_id1;
       dbg = dbg1;
-      rec_info = ();
+      rec_info = _;
       is_tupled = is_tupled1;
     }),
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      rec_info = ();
+      rec_info = _;
       is_tupled = is_tupled2;
     }) ->
     let typing_env = Meet_env.env env in
@@ -196,7 +196,7 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
       Ok (Ok (Inlinable {
           code_id;
           dbg = dbg1;
-          rec_info = ();
+          rec_info = Rec_info.unknown;
           is_tupled = is_tupled1;
         }),
         TEE.empty ())
@@ -249,13 +249,13 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
   | Ok (Inlinable {
       code_id = code_id1;
       dbg = dbg1;
-      rec_info = ();
+      rec_info = _;
       is_tupled = is_tupled1;
     }),
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      rec_info = ();
+      rec_info = _;
       is_tupled = is_tupled2;
     }) ->
     let typing_env = Join_env.target_join_env env in
@@ -267,7 +267,7 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
       Ok (Inlinable {
         code_id;
         dbg = dbg1;
-        rec_info = ();
+        rec_info = Rec_info.unknown;
         is_tupled = is_tupled1;
       })
     in
