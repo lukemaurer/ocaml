@@ -6042,6 +6042,7 @@ middle_end/flambda/simplify/common_subexpression_elimination.cmo : \
     middle_end/flambda/compilenv_deps/flambda_features.cmi \
     middle_end/flambda/basic/continuation_extra_params_and_args.cmi \
     middle_end/flambda/basic/apply_cont_rewrite_id.cmi \
+    middle_end/flambda/types/env/aliases.cmi \
     middle_end/flambda/simplify/common_subexpression_elimination.cmi
 middle_end/flambda/simplify/common_subexpression_elimination.cmx : \
     middle_end/flambda/compilenv_deps/variable.cmx \
@@ -6059,6 +6060,7 @@ middle_end/flambda/simplify/common_subexpression_elimination.cmx : \
     middle_end/flambda/compilenv_deps/flambda_features.cmx \
     middle_end/flambda/basic/continuation_extra_params_and_args.cmx \
     middle_end/flambda/basic/apply_cont_rewrite_id.cmx \
+    middle_end/flambda/types/env/aliases.cmx \
     middle_end/flambda/simplify/common_subexpression_elimination.cmi
 middle_end/flambda/simplify/common_subexpression_elimination.cmi : \
     middle_end/flambda/basic/simple.cmi \
@@ -9125,7 +9127,8 @@ middle_end/flambda/types/flambda_type.cmi : \
     middle_end/flambda/basic/code_id.cmi \
     middle_end/flambda/types/structures/code_age_relation.cmi \
     middle_end/flambda/basic/closure_id.cmi \
-    middle_end/flambda/basic/apply_cont_rewrite_id.cmi
+    middle_end/flambda/basic/apply_cont_rewrite_id.cmi \
+    middle_end/flambda/types/env/aliases.cmi
 middle_end/flambda/types/resolved_type.rec.cmo : \
     middle_end/flambda/basic/reg_width_const.cmi \
     middle_end/flambda/types/basic/or_unknown_or_bottom.cmi \
@@ -9153,6 +9156,7 @@ middle_end/flambda/types/type_descr.rec.cmo : \
     middle_end/flambda/cmx/ids_for_export.cmi \
     middle_end/flambda/compilenv_deps/flambda_colours.cmi \
     utils/clflags.cmi \
+    middle_end/flambda/types/env/aliases.cmi \
     middle_end/flambda/types/type_descr.rec.cmi
 middle_end/flambda/types/type_descr.rec.cmx : \
     middle_end/flambda/naming/with_delayed_permutation.cmx \
@@ -9170,6 +9174,7 @@ middle_end/flambda/types/type_descr.rec.cmx : \
     middle_end/flambda/cmx/ids_for_export.cmx \
     middle_end/flambda/compilenv_deps/flambda_colours.cmx \
     utils/clflags.cmx \
+    middle_end/flambda/types/env/aliases.cmx \
     middle_end/flambda/types/type_descr.rec.cmi
 middle_end/flambda/types/type_descr.rec.cmi : \
     middle_end/flambda/types/type_head_intf.cmo \
@@ -9437,10 +9442,12 @@ middle_end/flambda/types/env/aliases.cmo : \
     middle_end/flambda/compilenv_deps/variable.cmi \
     middle_end/flambda/basic/simple.cmi \
     middle_end/flambda/naming/renaming.cmi \
+    middle_end/flambda/compilenv_deps/reg_width_things.cmi \
     middle_end/flambda/naming/name_mode.cmi \
     middle_end/flambda/basic/name.cmi \
     utils/misc.cmi \
     middle_end/flambda/cmx/ids_for_export.cmi \
+    middle_end/flambda/compilenv_deps/flambda_colours.cmi \
     utils/clflags.cmi \
     middle_end/flambda/types/env/binding_time.cmi \
     middle_end/flambda/types/env/aliases.cmi
@@ -9448,10 +9455,12 @@ middle_end/flambda/types/env/aliases.cmx : \
     middle_end/flambda/compilenv_deps/variable.cmx \
     middle_end/flambda/basic/simple.cmx \
     middle_end/flambda/naming/renaming.cmx \
+    middle_end/flambda/compilenv_deps/reg_width_things.cmx \
     middle_end/flambda/naming/name_mode.cmx \
     middle_end/flambda/basic/name.cmx \
     utils/misc.cmx \
     middle_end/flambda/cmx/ids_for_export.cmx \
+    middle_end/flambda/compilenv_deps/flambda_colours.cmx \
     utils/clflags.cmx \
     middle_end/flambda/types/env/binding_time.cmx \
     middle_end/flambda/types/env/aliases.cmi
@@ -9502,7 +9511,6 @@ middle_end/flambda/types/env/typing_env.rec.cmo : \
     middle_end/flambda/basic/simple.cmi \
     middle_end/flambda/basic/scope.cmi \
     middle_end/flambda/naming/renaming.cmi \
-    middle_end/flambda/compilenv_deps/rec_info.cmi \
     utils/printing_cache.cmi \
     middle_end/flambda/naming/name_occurrences.cmi \
     middle_end/flambda/naming/name_mode.cmi \
@@ -9526,7 +9534,6 @@ middle_end/flambda/types/env/typing_env.rec.cmx : \
     middle_end/flambda/basic/simple.cmx \
     middle_end/flambda/basic/scope.cmx \
     middle_end/flambda/naming/renaming.cmx \
-    middle_end/flambda/compilenv_deps/rec_info.cmx \
     utils/printing_cache.cmx \
     middle_end/flambda/naming/name_occurrences.cmx \
     middle_end/flambda/naming/name_mode.cmx \
@@ -9561,7 +9568,8 @@ middle_end/flambda/types/env/typing_env.rec.cmi : \
     middle_end/flambda/compilenv_deps/compilation_unit.cmi \
     middle_end/flambda/basic/code_id.cmi \
     middle_end/flambda/types/structures/code_age_relation.cmi \
-    middle_end/flambda/basic/apply_cont_rewrite_id.cmi
+    middle_end/flambda/basic/apply_cont_rewrite_id.cmi \
+    middle_end/flambda/types/env/aliases.cmi
 middle_end/flambda/types/env/typing_env_extension.rec.cmo : \
     middle_end/flambda/compilenv_deps/variable.cmi \
     middle_end/flambda/naming/renaming.cmi \
@@ -10074,10 +10082,12 @@ middle_end/flambda/types/type_of_kind/boilerplate/type_of_kind_value.rec.cmi : \
     middle_end/flambda/types/type_descr_intf.cmo
 middle_end/flambda/types/inlining/inlining_arguments.cmo : \
     middle_end/flambda/types/basic/or_unknown.cmi \
+    utils/misc.cmi \
     utils/clflags.cmi \
     middle_end/flambda/types/inlining/inlining_arguments.cmi
 middle_end/flambda/types/inlining/inlining_arguments.cmx : \
     middle_end/flambda/types/basic/or_unknown.cmx \
+    utils/misc.cmx \
     utils/clflags.cmx \
     middle_end/flambda/types/inlining/inlining_arguments.cmi
 middle_end/flambda/types/inlining/inlining_arguments.cmi :
@@ -10098,6 +10108,7 @@ middle_end/flambda/unboxing/unbox_continuation_params.cmo : \
     lambda/tag.cmi \
     middle_end/flambda/simplify/simplify_import.cmi \
     middle_end/flambda/basic/simple.cmi \
+    middle_end/flambda/types/basic/or_unknown.cmi \
     middle_end/flambda/types/basic/or_bottom.cmi \
     middle_end/flambda/naming/name_mode.cmi \
     middle_end/flambda/naming/name_in_binding_pos.cmi \
@@ -10117,6 +10128,7 @@ middle_end/flambda/unboxing/unbox_continuation_params.cmx : \
     lambda/tag.cmx \
     middle_end/flambda/simplify/simplify_import.cmx \
     middle_end/flambda/basic/simple.cmx \
+    middle_end/flambda/types/basic/or_unknown.cmx \
     middle_end/flambda/types/basic/or_bottom.cmx \
     middle_end/flambda/naming/name_mode.cmx \
     middle_end/flambda/naming/name_in_binding_pos.cmx \
