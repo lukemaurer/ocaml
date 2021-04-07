@@ -4424,17 +4424,20 @@ middle_end/flambda/basic/name.cmo : \
     middle_end/flambda/compilenv_deps/symbol.cmi \
     middle_end/flambda/compilenv_deps/reg_width_things.cmi \
     utils/misc.cmi \
+    utils/identifiable.cmi \
     middle_end/flambda/basic/name.cmi
 middle_end/flambda/basic/name.cmx : \
     middle_end/flambda/compilenv_deps/variable.cmx \
     middle_end/flambda/compilenv_deps/symbol.cmx \
     middle_end/flambda/compilenv_deps/reg_width_things.cmx \
     utils/misc.cmx \
+    utils/identifiable.cmx \
     middle_end/flambda/basic/name.cmi
 middle_end/flambda/basic/name.cmi : \
     middle_end/flambda/compilenv_deps/variable.cmi \
     middle_end/flambda/compilenv_deps/symbol.cmi \
     middle_end/flambda/compilenv_deps/reg_width_things.cmi \
+    utils/identifiable.cmi \
     middle_end/flambda/compilenv_deps/compilation_unit.cmi
 middle_end/flambda/basic/num_continuation_uses.cmo : \
     middle_end/flambda/basic/num_continuation_uses.cmi
@@ -9496,10 +9499,12 @@ middle_end/flambda/types/env/join_env.rec.cmi : \
     middle_end/flambda/basic/simple.cmi
 middle_end/flambda/types/env/meet_env.rec.cmo : \
     middle_end/flambda/basic/simple.cmi \
+    middle_end/flambda/basic/name.cmi \
     utils/misc.cmi \
     middle_end/flambda/types/env/meet_env.rec.cmi
 middle_end/flambda/types/env/meet_env.rec.cmx : \
     middle_end/flambda/basic/simple.cmx \
+    middle_end/flambda/basic/name.cmx \
     utils/misc.cmx \
     middle_end/flambda/types/env/meet_env.rec.cmi
 middle_end/flambda/types/env/meet_env.rec.cmi : \
