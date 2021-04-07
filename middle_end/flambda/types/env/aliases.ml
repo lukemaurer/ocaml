@@ -198,7 +198,8 @@ module Alias_set = struct
         { const = const2; names = names2; } =
     let const =
       match const1, const2 with
-      | Some const1, Some const2 when Const.equal const1 const2 -> Some const1        | _, _ -> None
+      | Some const1, Some const2 when Const.equal const1 const2 -> Some const1
+      | _, _ -> None
     in
     let names = Name.Set.inter names1 names2 in
     { const; names; }
