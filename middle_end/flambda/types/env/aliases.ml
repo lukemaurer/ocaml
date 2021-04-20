@@ -474,9 +474,9 @@ let add_alias t element1 element2 =
   | Alias_of_canonical
         { element = _; canonical_element = canonical_element1; },
       Is_canonical canonical_element2
-  | Is_canonical canonical_element2,
+  | Is_canonical canonical_element1,
       Alias_of_canonical
-        { element = _; canonical_element = canonical_element1; }
+        { element = _; canonical_element = canonical_element2; }
   | Alias_of_canonical
         { element = _; canonical_element = canonical_element1; },
       Alias_of_canonical
