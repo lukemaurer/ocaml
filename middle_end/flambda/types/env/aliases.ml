@@ -455,20 +455,72 @@ type add_result = {
 let invariant_add_result ~original_t { canonical_element; alias_of_demoted_element; t; } =
   if !Clflags.flambda_invariant_checks then begin
     invariant t;
-    if not (Simple.equal canonical_element alias_of_demoted_element) then begin
-      if not (defined_earlier t canonical_element ~than:alias_of_demoted_element) then begin
-        Misc.fatal_errorf "Canonical element %a should be defined earlier \
-            than %a after alias addition.@ Original alias tracker:@ %a@ \
+    if not (defined_earlier t canonical_element ~than:alias_of_demoted_element) then begin
+      Misc.fatal_errorf "Canonical element %a should be defined earlier \
+          than %a after alias addition.@ Original alias tracker:@ %a@ \
+          Resulting alias tracker:@ %a"
+        Simple.print canonical_element
+        Simple.print alias_of_demoted_element
+        print original_t
+        print t
+    end;
+    match canonical t alias_of_demoted_element with
+    | Is_canonical _ ->
+        Misc.fatal_errorf "Alias %a must not be must not be canonical \
+            anymore.@ \
+            Original alias tracker:@ %a@ \
             Resulting alias tracker:@ %a"
-          Simple.print canonical_element
           Simple.print alias_of_demoted_element
           print original_t
           print t
-      end
-    end
+    | Alias_of_canonical _ -> ()
   end
 
+(*
+let debugging () = !Clflags.dump_rawflambda
+let andop = "\u{2227}"
+let canonop = "\u{21e5}"
+
+let debugf fmt =
+  let k go = if debugging () then go Format.err_formatter else () in
+  Format.kdprintf k fmt
+*)
+
 let add_alias t element1 element2 =
+(*
+  debugf "@[<hv2>add_alias@ ~element1:%a@ ~element2:%a@]@."
+    Simple.print element1
+    Simple.print element2;
+  (fun ({ canonical_element; alias_of_demoted_element = alias_of; t = _ } as ans) ->
+    debugf "Decision: %a %s %a@."
+      Simple.print alias_of
+      canonop
+      Simple.print canonical_element;
+    ans
+  ) @@ begin
+  begin match canonical t element1, canonical t element2 with
+  | Is_canonical canonical_element1, Is_canonical canonical_element2
+  | Alias_of_canonical
+        { element = _; canonical_element = canonical_element1; },
+      Is_canonical canonical_element2
+  | Is_canonical canonical_element1,
+      Alias_of_canonical
+        { element = _; canonical_element = canonical_element2; }
+  | Alias_of_canonical
+        { element = _; canonical_element = canonical_element1; },
+      Alias_of_canonical
+        { element = _; canonical_element = canonical_element2; }
+      ->
+    debugf "@[<hv2>%a %s %a@ %s@ %a %s %a@]@."
+      Simple.print element1
+      canonop
+      Simple.print canonical_element1
+      andop
+      Simple.print element2
+      canonop
+      Simple.print canonical_element2;
+  end;
+*)
   match canonical t element1, canonical t element2 with
   | Is_canonical canonical_element1, Is_canonical canonical_element2
   | Alias_of_canonical
@@ -482,40 +534,67 @@ let add_alias t element1 element2 =
       Alias_of_canonical
         { element = _; canonical_element = canonical_element2; }
       ->
-    let canonical_element, to_be_demoted, alias_of_demoted_element =
-      let which_element =
-        choose_canonical_element_to_be_demoted t
-          ~canonical_element1 ~canonical_element2
+    if Simple.equal canonical_element1 canonical_element2
+    then
+      let canonical_element = canonical_element1 in
+      (* According to the contract for [add], [alias_of_demoted_element] must
+         not be canonical. Usually this is fine, but what if [element1] or
+         [element2] is *itself* canonical? This is true iff that element is
+         equal to [canonical_element1]. In that case, we can safely pick the
+         other element. (They cannot both be canonical because then they'd both
+         be equal to [canonical_element1] and we assume that [element1] and
+         [element2] are different.) *)
+      (* CR lmaurer: We should just bail out in this case; since [element1] and
+         [element2] have the same canonical, they're already aliases, so
+         [Typing_env.add_equation] doesn't actually need to do anything at all
+         IIUC. *)
+      let alias_of_demoted_element =
+        if Simple.equal element1 canonical_element then element2 else element1
       in
-      match which_element with
-      | Demote_canonical_element1 ->
-        canonical_element2, canonical_element1, element1
-      | Demote_canonical_element2 ->
-        canonical_element1, canonical_element2, element2
-    in
-    let t =
-      add_alias_between_canonical_elements t ~canonical_element
-        ~to_be_demoted
-    in
-    { t;
-      canonical_element;
-      alias_of_demoted_element;
-    }
+      { t; canonical_element; alias_of_demoted_element; }
+    else
+      let canonical_element, to_be_demoted, alias_of_demoted_element =
+        let which_element =
+          choose_canonical_element_to_be_demoted t
+            ~canonical_element1 ~canonical_element2
+        in
+        match which_element with
+        | Demote_canonical_element1 ->
+          canonical_element2, canonical_element1, element1
+        | Demote_canonical_element2 ->
+          canonical_element1, canonical_element2, element2
+      in
+      let t =
+        add_alias_between_canonical_elements t ~canonical_element
+          ~to_be_demoted
+      in
+      { t;
+        canonical_element;
+        alias_of_demoted_element;
+      }
+(*
+  end
+*)
 
 let add t element1 binding_time_and_mode1
       element2 binding_time_and_mode2 =
-  Simple.pattern_match element1
-    ~name:(fun _ -> ())
-    ~const:(fun const1 ->
-      Simple.pattern_match element2
-        ~name:(fun _ -> ())
-        ~const:(fun const2 ->
-          if not (Const.equal const1 const2) then begin
+  if !Clflags.flambda_invariant_checks then begin
+    if Simple.equal element1 element2 then begin
+      Misc.fatal_errorf
+        "Cannot alias an element to itself: %a" Simple.print element1
+    end;
+    Simple.pattern_match element1
+      ~name:(fun _ -> ())
+      ~const:(fun const1 ->
+        Simple.pattern_match element2
+          ~name:(fun _ -> ())
+          ~const:(fun const2 ->
             Misc.fatal_errorf
-              "Cannot add alias between two non-equal consts: %a <> %a"
+              "Cannot add alias between two consts: %a, %a"
                 Const.print const1
                 Const.print const2
-          end));
+          ));
+  end;
   let original_t = t in
   let element1 = Simple.without_rec_info element1 in
   let element2 = Simple.without_rec_info element2 in

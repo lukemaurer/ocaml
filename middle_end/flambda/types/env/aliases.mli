@@ -34,6 +34,13 @@ type add_result = private {
   alias_of_demoted_element : Simple.t;
 }
 
+(** Add an alias relationship to the tracker. The two simple expressions
+    must be different and not both constants. If [add t s1 mode1 s2 mode2]
+    returns [{ t = t'; canonical_element; alias_of_demoted_element }], then
+    according to [t'],
+    - [canonical_element] is the canonical element of both [s1] and [s2];
+    - [alias_of_demoted_element] is either [s1] or [s2]; and
+    - [alias_of_demoted_element] is no longer canonical. *)
 val add
    : t
   -> Simple.t
