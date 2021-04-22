@@ -117,12 +117,7 @@ end
 
 let cse_with_eligible_lhs ~typing_env_at_fork ~cse_at_each_use ~params prev_cse
       (extra_bindings: EPA.t) extra_equations =
-  let params = KP.List.name_set params in
-  let is_param simple =
-    Simple.pattern_match simple
-      ~name:(fun name -> Name.Set.mem name params)
-      ~const:(fun _ -> false)
-  in
+  let params = KP.List.simple_set params in
   List.fold_left cse_at_each_use ~init:EP.Map.empty
     ~f:(fun eligible (env_at_use, id, cse) ->
       let find_new_name =
@@ -187,17 +182,15 @@ let cse_with_eligible_lhs ~typing_env_at_fork ~cse_at_each_use ~params prev_cse
                  since they are defined in [env_at_fork].  However these
                  aren't bound at the use sites, so we must choose another
                  alias that is. *)
-              if not (is_param bound_to) then Some bound_to
+              if not (Simple.Set.mem bound_to params) then Some bound_to
               else
                 let aliases =
                   TE.aliases_of_simple env_at_use
                     ~min_name_mode:NM.normal bound_to
-                  |> Aliases.Alias_set.filter ~f:(fun simple ->
-                    not (is_param simple))
+                  |> Simple.Set.filter (fun simple ->
+                    not (Simple.Set.mem simple params))
                 in
-                (* CR lmaurer: This could be using
-                   [Aliases.Alias_set.find_best], I think? *)
-                Aliases.Alias_set.get_singleton aliases
+                Simple.Set.get_singleton aliases
             in
             match bound_to with
             | None -> eligible

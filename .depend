@@ -6002,7 +6002,6 @@ middle_end/flambda/simplify/common_subexpression_elimination.cmo : \
     middle_end/flambda/compilenv_deps/flambda_features.cmi \
     middle_end/flambda/basic/continuation_extra_params_and_args.cmi \
     middle_end/flambda/basic/apply_cont_rewrite_id.cmi \
-    middle_end/flambda/types/env/aliases.cmi \
     middle_end/flambda/simplify/common_subexpression_elimination.cmi
 middle_end/flambda/simplify/common_subexpression_elimination.cmx : \
     middle_end/flambda/compilenv_deps/variable.cmx \
@@ -6020,7 +6019,6 @@ middle_end/flambda/simplify/common_subexpression_elimination.cmx : \
     middle_end/flambda/compilenv_deps/flambda_features.cmx \
     middle_end/flambda/basic/continuation_extra_params_and_args.cmx \
     middle_end/flambda/basic/apply_cont_rewrite_id.cmx \
-    middle_end/flambda/types/env/aliases.cmx \
     middle_end/flambda/simplify/common_subexpression_elimination.cmi
 middle_end/flambda/simplify/common_subexpression_elimination.cmi : \
     middle_end/flambda/basic/simple.cmi \
@@ -8988,8 +8986,7 @@ middle_end/flambda/types/flambda_type.cmi : \
     middle_end/flambda/basic/code_id.cmi \
     middle_end/flambda/types/structures/code_age_relation.cmi \
     middle_end/flambda/basic/closure_id.cmi \
-    middle_end/flambda/basic/apply_cont_rewrite_id.cmi \
-    middle_end/flambda/types/env/aliases.cmi
+    middle_end/flambda/basic/apply_cont_rewrite_id.cmi
 middle_end/flambda/types/resolved_type.rec.cmo : \
     middle_end/flambda/basic/reg_width_const.cmi \
     middle_end/flambda/types/basic/or_unknown_or_bottom.cmi \
@@ -9017,7 +9014,6 @@ middle_end/flambda/types/type_descr.rec.cmo : \
     middle_end/flambda/cmx/ids_for_export.cmi \
     middle_end/flambda/compilenv_deps/flambda_colours.cmi \
     utils/clflags.cmi \
-    middle_end/flambda/types/env/aliases.cmi \
     middle_end/flambda/types/type_descr.rec.cmi
 middle_end/flambda/types/type_descr.rec.cmx : \
     middle_end/flambda/naming/with_delayed_permutation.cmx \
@@ -9035,7 +9031,6 @@ middle_end/flambda/types/type_descr.rec.cmx : \
     middle_end/flambda/cmx/ids_for_export.cmx \
     middle_end/flambda/compilenv_deps/flambda_colours.cmx \
     utils/clflags.cmx \
-    middle_end/flambda/types/env/aliases.cmx \
     middle_end/flambda/types/type_descr.rec.cmi
 middle_end/flambda/types/type_descr.rec.cmi : \
     middle_end/flambda/types/type_head_intf.cmo \
@@ -9302,8 +9297,6 @@ middle_end/flambda/types/basic/var_within_closure_set.cmi : \
 middle_end/flambda/types/env/aliases.cmo : \
     middle_end/flambda/compilenv_deps/variable.cmi \
     middle_end/flambda/basic/simple.cmi \
-    middle_end/flambda/compilenv_deps/reg_width_things.cmi \
-    middle_end/flambda/types/basic/or_bottom.cmi \
     middle_end/flambda/naming/name_mode.cmi \
     middle_end/flambda/basic/name.cmi \
     utils/misc.cmi \
@@ -9316,8 +9309,6 @@ middle_end/flambda/types/env/aliases.cmo : \
 middle_end/flambda/types/env/aliases.cmx : \
     middle_end/flambda/compilenv_deps/variable.cmx \
     middle_end/flambda/basic/simple.cmx \
-    middle_end/flambda/compilenv_deps/reg_width_things.cmx \
-    middle_end/flambda/types/basic/or_bottom.cmx \
     middle_end/flambda/naming/name_mode.cmx \
     middle_end/flambda/basic/name.cmx \
     utils/misc.cmx \
@@ -9329,11 +9320,9 @@ middle_end/flambda/types/env/aliases.cmx : \
     middle_end/flambda/types/env/aliases.cmi
 middle_end/flambda/types/env/aliases.cmi : \
     middle_end/flambda/basic/simple.cmi \
-    middle_end/flambda/types/basic/or_bottom.cmi \
     middle_end/flambda/naming/name_mode.cmi \
     middle_end/flambda/basic/name.cmi \
     middle_end/flambda/cmx/contains_ids.cmo \
-    middle_end/flambda/compilenv_deps/coercion.cmi \
     middle_end/flambda/types/env/binding_time.cmi
 middle_end/flambda/types/env/binding_time.cmo : \
     utils/numbers.cmi \
@@ -9427,8 +9416,7 @@ middle_end/flambda/types/env/typing_env.rec.cmi : \
     middle_end/flambda/compilenv_deps/compilation_unit.cmi \
     middle_end/flambda/basic/code_id.cmi \
     middle_end/flambda/types/structures/code_age_relation.cmi \
-    middle_end/flambda/basic/apply_cont_rewrite_id.cmi \
-    middle_end/flambda/types/env/aliases.cmi
+    middle_end/flambda/basic/apply_cont_rewrite_id.cmi
 middle_end/flambda/types/env/typing_env_extension.rec.cmo : \
     middle_end/flambda/compilenv_deps/variable.cmi \
     middle_end/flambda/types/basic/or_bottom.cmi \
