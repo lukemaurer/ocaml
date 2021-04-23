@@ -75,22 +75,8 @@ module rec Expr : sig
 
   val create_switch : Switch_expr.t -> t
 
-  (** Build a [Switch] corresponding to a traditional if-then-else. *)
-  val create_if_then_else
-     : scrutinee:Simple.t
-    -> if_true:Apply_cont_expr.t
-    -> if_false:Apply_cont_expr.t
-    -> t
-
   (** Create an expression indicating type-incorrect or unreachable code. *)
   val create_invalid : ?semantics:Invalid_term_semantics.t -> unit -> t
-
-  val bind_no_simplification
-     : bindings:(Var_in_binding_pos.t * Cost_metrics.t * Named.t) list
-    -> body:Expr.t
-    -> cost_metrics_of_body:Cost_metrics.t
-    -> free_names_of_body:Name_occurrences.t
-    -> Expr.t * Cost_metrics.t * Name_occurrences.t
 
   val bind_parameters_to_args_no_simplification
      : params:Kinded_parameter.t list
@@ -370,20 +356,6 @@ end and Continuation_handler : sig
       simultaneously-defined continuations when one or more of them is an
       exception handler.) *)
   val is_exn_handler : t -> bool
-
-  module Behaviour : sig
-    type t = private
-      | Unreachable of { arity : Flambda_arity.With_subkinds.t; }
-      | Alias_for of {
-          arity : Flambda_arity.With_subkinds.t;
-          alias_for : Continuation.t;
-        }
-      | Unknown of { arity : Flambda_arity.With_subkinds.t; }
-  end
-
-  val arity : t -> Flambda_arity.With_subkinds.t
-
-  val behaviour : t -> Behaviour.t
 end and Recursive_let_cont_handlers : sig
   (** The representation of the alpha-equivalence class of a group of possibly
       (mutually-) recursive continuation handlers that are bound both over a
@@ -520,6 +492,8 @@ end and Static_const : sig
 
     (** Printing, total ordering, etc. *)
     include Identifiable.S with type t := t
+
+    include Contains_names.S with type t := t
   end
 
   (* CR mshinwell: Somewhere there should be an invariant check that
@@ -638,7 +612,9 @@ end and Code : sig
 
   val recursive : t -> Recursive.t
 
-  val cost_metrics : t -> Cost_metrics.t Or_unknown.t
+  val cost_metrics : t -> Cost_metrics.t
+
+  val inlining_arguments : t -> Inlining_arguments.t
 
   val create
      : Code_id.t
@@ -651,15 +627,15 @@ end and Code : sig
     -> inline:Inline_attribute.t
     -> is_a_functor:bool
     -> recursive:Recursive.t
-    -> cost_metrics: Cost_metrics.t Or_unknown.t
+    -> cost_metrics:Cost_metrics.t
+    -> inlining_arguments:Inlining_arguments.t
     -> t
 
   val with_code_id : Code_id.t -> t -> t
 
   val with_params_and_body
      : (Function_params_and_body.t * Name_occurrences.t) Or_deleted.t
-     (* CR poechsel: remove Or_unknown.t and force cost_metrics to be provided *)
-    -> cost_metrics:Cost_metrics.t Or_unknown.t
+    -> cost_metrics:Cost_metrics.t
     -> t
     -> t
 
@@ -667,11 +643,9 @@ end and Code : sig
 
   val print : Format.formatter -> t -> unit
 
-  val free_names : t -> Name_occurrences.t
+  include Contains_names.S with type t := t
 
   val all_ids_for_export : t -> Ids_for_export.t
-
-  val import : Ids_for_export.Import_map.t -> t -> t
 
   val make_deleted : t -> t
 
@@ -679,25 +653,34 @@ end and Code : sig
 end and Cost_metrics : sig
   type t
 
-  val expr_size : find_code:(Code_id.t -> Code.t) -> Expr.t -> t
   val zero : t
-  val to_int : t -> int
-  val (+) : t -> t -> t
-  val smaller_than_threshold : t -> threshold:int -> bool
-  val equal : t -> t -> bool
+  val from_size : Code_size.t -> t
+  val size : t -> Code_size.t
   val print : Format.formatter -> t -> unit
+  val (+) : t -> t -> t
 
-  val prim : Flambda_primitive.t -> t
-  val simple : Simple.t -> t
-  val set_of_closures : find_cost_metrics:(Code_id.t -> t Or_unknown.t) -> Set_of_closures.t -> t
-  val static_consts : Static_const.Group.t -> t
-  val apply : Apply.t -> t
-  val apply_cont : Apply_cont.t -> t
-  val switch : Switch.t -> t
-  val invalid : unit -> t
-  val increase_due_to_let_expr : is_phantom:bool -> cost_metrics_of_defining_expr:t -> t
+  type code_characteristics = {
+    cost_metrics : t;
+    params_arity : int;
+  }
+  val set_of_closures
+    : find_code_characteristics:(Code_id.t -> code_characteristics)
+    -> Set_of_closures.t
+    -> t
+
+  val increase_due_to_let_expr
+     : is_phantom:bool
+    -> cost_metrics_of_defining_expr:t
+    -> t
+
   val increase_due_to_let_cont_non_recursive : cost_metrics_of_handler:t -> t
   val increase_due_to_let_cont_recursive : cost_metrics_of_handlers:t -> t
+
+  val notify_added: code_size:Code_size.t -> t -> t
+  val notify_removed : operation:Removed_operations.t -> t -> t
+
+  val expr_size : find_code:(Code_id.t -> Code.t) -> Expr.t -> Code_size.t
+  val evaluate : args:Inlining_arguments.t -> t -> float
 end
 
 module Function_declaration = Function_declaration

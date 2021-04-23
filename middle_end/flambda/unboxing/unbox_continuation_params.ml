@@ -128,9 +128,9 @@ module Make (U : Unboxing_spec) = struct
             | exception Not_found -> None
             | block ->
               match
-                TE.get_canonical_simple_exn typing_env_at_use
+                TE.get_canonical_simple_exn typing_env_at_use block
                   ~min_name_mode:Name_mode.normal
-                  block
+                  ~name_mode_of_existing_simple:NM.normal
               with
               | exception Not_found -> None
               | block -> Some block
@@ -225,9 +225,9 @@ module Make (U : Unboxing_spec) = struct
                 Continue (extra_args, field_types_by_id)
               in
               match
-                TE.get_canonical_simple_exn typing_env_at_use
-                  ~min_name_mode:Name_mode.normal
-                  field
+                TE.get_canonical_simple_exn typing_env_at_use field
+                  ~min_name_mode:NM.normal
+                  ~name_mode_of_existing_simple:NM.normal
               with
               | exception Not_found ->
                 begin match untag with
@@ -241,8 +241,9 @@ module Make (U : Unboxing_spec) = struct
                   let untagged_field = Simple.var untagged_field_var in
                   match
                     TE.get_canonical_simple_exn typing_env_at_use
-                      ~min_name_mode:Name_mode.normal
-                    untagged_field
+                      untagged_field
+                      ~min_name_mode:NM.normal
+                      ~name_mode_of_existing_simple:NM.normal
                   with
                   | exception Not_found -> fail ()
                   | untagged_simple ->
@@ -459,15 +460,15 @@ end
 module Variant : sig
   type t
 
-  val create : T.variant_proof -> t
+  val create : T.variant_like_proof -> t
 
   val max_size : t -> Targetint.OCaml.t
 
-  val const_ctors : t -> Target_imm.Set.t
+  val const_ctors : t -> Target_imm.Set.t Or_unknown.t
 
   val non_const_ctors_with_sizes : t -> Targetint.OCaml.t Tag.Scannable.Map.t
 end = struct
-  type t = T.variant_proof
+  type t = T.variant_like_proof
 
   let create variant = variant
 
@@ -1058,7 +1059,7 @@ let rec make_unboxing_decision denv ~depth ~arg_types_by_use_id
             DE.print denv
         end
     | Wrong_kind | Invalid | Unknown ->
-      match T.prove_variant (DE.typing_env denv) param_type with
+      match T.prove_variant_like (DE.typing_env denv) param_type with
       | Proved variant ->
         (*
         Format.eprintf "Starting variant unboxing\n%!";

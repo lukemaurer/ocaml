@@ -56,8 +56,6 @@ val typing_env : t -> Flambda_type.Typing_env.t
 
 val add_variable : t -> Var_in_binding_pos.t -> Flambda_type.t -> t
 
-val extend_typing_environment : t -> Flambda_type.Typing_env_extension.t -> t
-
 val no_lifted_constants : t -> bool
 
 val add_lifted_constant
@@ -110,3 +108,9 @@ val add_use_of_closure_var : t -> Var_within_closure.t -> t
 val used_closure_vars : t -> Name_occurrences.t
 
 val with_used_closure_vars : t -> used_closure_vars:Name_occurrences.t -> t
+
+val set_do_not_rebuild_terms_and_disable_inlining : t -> t
+
+val are_rebuilding_terms : t -> Are_rebuilding_terms.t
+
+val do_not_rebuild_terms : t -> bool

@@ -158,6 +158,9 @@ module Simple : sig
 
   val with_coercion : t -> Coercion.t -> t
 
+  (* This does not consult the grand table of [Simple]s. *)
+  val has_coercion : t -> bool
+
   (* CR lmaurer: Should make [name] and [const] take a [coercion] argument to
      be sure we're not dropping coercions by accident. *)
   val pattern_match
@@ -172,7 +175,7 @@ module Simple : sig
 
   val export : t -> exported
 
-  val import : (t -> t) -> exported -> t
+  val import : exported -> t
 
   val map_compilation_unit :
     (Compilation_unit.t -> Compilation_unit.t) -> exported -> exported

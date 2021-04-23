@@ -23,6 +23,8 @@ include module type of struct include Reg_width_things.Simple end
 
 include Contains_names.S with type t := t
 
+val has_coercion : t -> bool
+
 val apply_coercion : t -> Coercion.t -> t option
 
 val apply_coercion_exn : t -> Coercion.t -> t
@@ -91,12 +93,6 @@ module List : sig
   type nonrec t = t list
 
   include Contains_names.S with type t := t
-  include Identifiable.S with type t := t
-end
-
-module Pair : sig
-  type nonrec t = t * t
-
   include Identifiable.S with type t := t
 end
 

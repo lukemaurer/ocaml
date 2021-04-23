@@ -111,9 +111,6 @@ let typing_env t = DE.typing_env (denv t)
 let add_variable t var ty =
   with_denv t (DE.add_variable (denv t) var ty)
 
-let extend_typing_environment t env_extension =
-  with_denv t (DE.extend_typing_environment (denv t) env_extension)
-
 let get_typing_env_no_more_than_one_use t k =
   CUE.get_typing_env_no_more_than_one_use t.continuation_uses_env k
 
@@ -184,3 +181,12 @@ let all_continuations_used t =
 
 let with_used_closure_vars t ~used_closure_vars =
   { t with used_closure_vars = used_closure_vars; }
+
+let set_do_not_rebuild_terms_and_disable_inlining t =
+  { t with denv = DE.set_do_not_rebuild_terms_and_disable_inlining t.denv; }
+
+let are_rebuilding_terms t =
+  DE.are_rebuilding_terms t.denv
+
+let do_not_rebuild_terms t =
+  Are_rebuilding_terms.do_not_rebuild_terms (are_rebuilding_terms t)

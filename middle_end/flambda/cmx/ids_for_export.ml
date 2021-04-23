@@ -14,6 +14,7 @@
 (**************************************************************************)
 
 module Const = Reg_width_things.Const
+module Simple = Reg_width_things.Simple
 
 type t = {
   symbols : Symbol.Set.t;
@@ -126,87 +127,3 @@ let rec union_list ts =
   match ts with
   | [] -> empty
   | t::ts -> union t (union_list ts)
-
-module Import_map = struct
-  type t = {
-    symbols : Symbol.t Symbol.Map.t;
-    variables : Variable.t Variable.Map.t;
-    simples : Simple.t Simple.Map.t;
-    consts : Const.t Const.Map.t;
-    code_ids : Code_id.t Code_id.Map.t;
-    continuations : Continuation.t Continuation.Map.t;
-    used_closure_vars : Var_within_closure.Set.t;
-    (* CR vlaviron: [used_closure_vars] is here because we need to rewrite the
-       types to remove occurrences of unused closure variables, as otherwise
-       the types can contain references to code that is neither exported nor
-       present in the actual object file. But this means rewriting types, and
-       the only place a rewriting traversal is done at the moment is during
-       import. This solution is not ideal because the missing code IDs will
-       still be present in the emitted cmx files, and during the traversal
-       in [Flambda_cmx.compute_reachable_names_and_code] we have to assume
-       that code IDs can be missing (and so we cannot detect code IDs that
-       are really missing at this point). *)
-  }
-
-  let create
-      ~symbols
-      ~variables
-      ~simples
-      ~consts
-      ~code_ids
-      ~continuations
-      ~used_closure_vars =
-    { symbols;
-      variables;
-      simples;
-      consts;
-      code_ids;
-      continuations;
-      used_closure_vars;
-    }
-
-  let symbol t orig =
-    match Symbol.Map.find orig t.symbols with
-    | symbol -> symbol
-    | exception Not_found -> orig
-
-  let variable t orig =
-    match Variable.Map.find orig t.variables with
-    | variable -> variable
-    | exception Not_found -> orig
-
-  let const t orig =
-    match Const.Map.find orig t.consts with
-    | const -> const
-    | exception Not_found -> orig
-
-  let code_id t orig =
-    match Code_id.Map.find orig t.code_ids with
-    | code_id -> code_id
-    | exception Not_found -> orig
-
-  let continuation t orig =
-    match Continuation.Map.find orig t.continuations with
-    | continuation -> continuation
-    | exception Not_found -> orig
-
-  let name t name =
-    Name.pattern_match name
-      ~var:(fun var -> Name.var (variable t var))
-      ~symbol:(fun sym -> Name.symbol (symbol t sym))
-
-  let simple t simple =
-    match Simple.Map.find simple t.simples with
-    | simple -> simple
-    | exception Not_found ->
-      begin match Simple.coercion simple with
-      | Id ->
-        Simple.pattern_match simple
-          ~name:(fun n -> Simple.name (name t n))
-          ~const:(fun c -> Simple.const (const t c))
-      | _ -> simple
-      end
-
-  let closure_var_is_used t var =
-    Var_within_closure.Set.mem var t.used_closure_vars
-end

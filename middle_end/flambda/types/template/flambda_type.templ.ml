@@ -293,7 +293,15 @@ let prove_is_int env t : bool proof =
   | Const _ -> wrong_kind ()
   | Value (Ok (Variant blocks_imms)) ->
     begin match blocks_imms.blocks, blocks_imms.immediates with
-    | Unknown, Unknown | Unknown, Known _ | Known _, Unknown -> Unknown
+    | Unknown, Unknown -> Unknown
+    | Unknown, Known imms ->
+      if is_bottom env imms
+      then Proved false
+      else Unknown
+    | Known blocks, Unknown ->
+      if Row_like.For_blocks.is_bottom blocks
+      then Proved true
+      else Unknown
     | Known blocks, Known imms ->
       (* CR mshinwell: Should we tighten things up by causing fatal errors
          in cases such as [blocks] and [imms] both being bottom? *)
@@ -496,60 +504,57 @@ let prove_unique_tag_and_size env t
       | None -> Unknown
       | Some (tag, size) -> Proved (tag, size)
 
-type variant_proof = {
-  const_ctors : Target_imm.Set.t;
+type variant_like_proof = {
+  const_ctors : Target_imm.Set.t Or_unknown.t;
   non_const_ctors_with_sizes : Targetint.OCaml.t Tag.Scannable.Map.t;
 }
 
-let prove_variant env t : variant_proof proof_allowing_kind_mismatch =
+let prove_variant_like env t : variant_like_proof proof_allowing_kind_mismatch =
   (* Format.eprintf "prove_variant:@ %a\n%!" print t; *)
   match expand_head t env with
-  | Const (Tagged_immediate _) -> Unknown
+  | Const (Tagged_immediate imm) ->
+    Proved {
+      const_ctors = Known (Target_imm.Set.singleton imm);
+      non_const_ctors_with_sizes = Tag.Scannable.Map.empty;
+    }
   | Const _ -> Wrong_kind
   | Value (Ok (Variant blocks_imms)) ->
-    begin match blocks_imms.immediates with
+    begin match blocks_imms.blocks with
     | Unknown -> Unknown
-    | Known imms ->
-      let const_ctors : _ Or_unknown.t =
-        match prove_naked_immediates env imms with
-        | Unknown -> Unknown
-        | Invalid -> Known Target_imm.Set.empty
-        | Proved const_ctors -> Known const_ctors
-      in
-      match const_ctors with
+    | Known blocks ->
+      match Row_like.For_blocks.all_tags_and_sizes blocks with
       | Unknown -> Unknown
-      | Known const_ctors ->
-        let valid =
-          Target_imm.Set.for_all Target_imm.is_non_negative const_ctors
+      | Known non_const_ctors_with_sizes ->
+        let non_const_ctors_with_sizes =
+          Tag.Map.fold
+            (fun tag size (result : _ Or_unknown.t) : _ Or_unknown.t ->
+               match result with
+               | Unknown -> Unknown
+               | Known result ->
+                 match Tag.Scannable.of_tag tag with
+                 | None -> Unknown
+                 | Some tag ->
+                   Known (Tag.Scannable.Map.add tag size result))
+            non_const_ctors_with_sizes
+            (Or_unknown.Known Tag.Scannable.Map.empty)
         in
-        if not valid then Invalid
-        else
-          match blocks_imms.blocks with
-          | Unknown -> Unknown
-          | Known blocks ->
-            match Row_like.For_blocks.all_tags_and_sizes blocks with
+        match non_const_ctors_with_sizes with
+        | Unknown -> Unknown
+        | Known non_const_ctors_with_sizes ->
+          let const_ctors : _ Or_unknown.t =
+            match blocks_imms.immediates with
             | Unknown -> Unknown
-            | Known non_const_ctors_with_sizes ->
-              let non_const_ctors_with_sizes =
-                Tag.Map.fold
-                  (fun tag size (result : _ Or_bottom.t) : _ Or_bottom.t ->
-                    match result with
-                    | Bottom -> Bottom
-                    | Ok result ->
-                      match Tag.Scannable.of_tag tag with
-                      | None -> Bottom
-                      | Some tag ->
-                        Ok (Tag.Scannable.Map.add tag size result))
-                  non_const_ctors_with_sizes
-                  (Or_bottom.Ok Tag.Scannable.Map.empty)
-              in
-              match non_const_ctors_with_sizes with
-              | Bottom -> Invalid
-              | Ok non_const_ctors_with_sizes ->
-                Proved {
-                  const_ctors;
-                  non_const_ctors_with_sizes;
-                }
+            | Known imms ->
+              begin match prove_naked_immediates env imms with
+              | Unknown -> Unknown
+              | Invalid -> Known Target_imm.Set.empty
+              | Proved const_ctors -> Known const_ctors
+              end
+          in
+          Proved {
+            const_ctors;
+            non_const_ctors_with_sizes;
+          }
     end
   | Value (Ok _) -> Invalid
   | Value Unknown -> Unknown
@@ -560,21 +565,45 @@ let prove_variant env t : variant_proof proof_allowing_kind_mismatch =
   | Naked_int64 _ -> Wrong_kind
   | Naked_nativeint _ -> Wrong_kind
 
-let prove_is_a_tagged_immediate env t : _ proof_allowing_kind_mismatch =
+let prove_is_a_boxed_number env t
+  : Flambda_kind.Boxable_number.t proof_allowing_kind_mismatch =
   match expand_head t env with
-  | Const (Tagged_immediate _) -> Proved ()
+  | Const (Tagged_immediate _) -> Proved Untagged_immediate
   | Const _ -> Wrong_kind
   | Value Unknown -> Unknown
   | Value (Ok (Variant { blocks; immediates; is_unique = _; })) ->
     begin match blocks, immediates with
-    | Unknown, Unknown | Unknown, Known _ | Known _, Unknown -> Unknown
+    | Unknown, Unknown -> Unknown
+    | Unknown, Known imms ->
+      if is_bottom env imms
+      then Invalid
+      else Unknown
+    | Known blocks, Unknown ->
+      if Row_like.For_blocks.is_bottom blocks
+      then Proved Untagged_immediate
+      else Unknown
     | Known blocks, Known imms ->
-      if Row_like.For_blocks.is_bottom blocks && not (is_bottom env imms)
-      then Proved ()
-      else Invalid
+      if is_bottom env imms then
+        Invalid
+      else if Row_like.For_blocks.is_bottom blocks then
+        Proved Untagged_immediate
+      else
+        Unknown
     end
+  | Value (Ok (Boxed_float _)) -> Proved Naked_float
+  | Value (Ok (Boxed_int32 _)) -> Proved Naked_int32
+  | Value (Ok (Boxed_int64 _)) -> Proved Naked_int64
+  | Value (Ok (Boxed_nativeint _)) -> Proved Naked_nativeint
   | Value _ -> Invalid
   | _ -> Wrong_kind
+
+let prove_is_a_tagged_immediate env t : _ proof_allowing_kind_mismatch =
+  match prove_is_a_boxed_number env t with
+  | Proved Untagged_immediate -> Proved ()
+  | Proved _ -> Unknown
+  | Invalid -> Invalid
+  | Wrong_kind -> Wrong_kind
+  | Unknown -> Unknown
 
 let prove_is_a_boxed_float env t : _ proof_allowing_kind_mismatch =
   match expand_head t env with
@@ -729,8 +758,9 @@ let prove_block_field_simple env ~min_name_mode t field_index : Simple.t proof =
           Unknown
         else
           begin match Row_like.For_blocks.get_field blocks field_index with
+          | Bottom -> Invalid
           | Unknown -> Unknown
-          | Known ty ->
+          | Ok ty ->
             begin match get_alias_exn ty with
             | simple ->
               begin match
@@ -852,44 +882,44 @@ let reify ?allowed_if_free_vars_defined_in ?additional_free_var_criterion
           | None -> try_canonical_simple ()
           | Some ((tag, size), field_types) ->
             assert (Targetint.OCaml.equal size
-              (Product.Int_indexed.width field_types));
+                      (Product.Int_indexed.width field_types));
             (* CR mshinwell: Could recognise other things, e.g. tagged
                immediates and float arrays, supported by [Static_part]. *)
-            let field_types =
-              Product.Int_indexed.components field_types
-            in
-            let vars_or_symbols_or_tagged_immediates =
-              List.filter_map
-                (fun field_type
+            begin match Tag.Scannable.of_tag tag with
+            | None -> try_canonical_simple ()
+            | Some tag ->
+              let field_types =
+                Product.Int_indexed.components field_types
+              in
+              let vars_or_symbols_or_tagged_immediates =
+                List.filter_map
+                  (fun field_type
                        : var_or_symbol_or_tagged_immediate option ->
-                  match
-                    (* CR mshinwell: Change this to a function
-                       [prove_equals_to_simple]? *)
-                    prove_equals_to_var_or_symbol_or_tagged_immediate env
-                      field_type
-                  with
-                  | Proved (Var var) ->
-                    if var_allowed var then Some (Var var) else None
-                  | Proved (Symbol sym) -> Some (Symbol sym)
-                  | Proved (Tagged_immediate imm) ->
-                    Some (Tagged_immediate imm)
-                  (* CR mshinwell: [Invalid] should propagate up *)
-                  | Unknown | Invalid -> None)
-                field_types
-            in
-            if List.compare_lengths field_types
-                 vars_or_symbols_or_tagged_immediates = 0
-            then
-              match Tag.Scannable.of_tag tag with
-              | Some tag ->
+                    match
+                      (* CR mshinwell: Change this to a function
+                         [prove_equals_to_simple]? *)
+                      prove_equals_to_var_or_symbol_or_tagged_immediate env
+                        field_type
+                    with
+                    | Proved (Var var) ->
+                      if var_allowed var then Some (Var var) else None
+                    | Proved (Symbol sym) -> Some (Symbol sym)
+                    | Proved (Tagged_immediate imm) ->
+                      Some (Tagged_immediate imm)
+                    (* CR mshinwell: [Invalid] should propagate up *)
+                    | Unknown | Invalid -> None)
+                  field_types
+              in
+              if List.compare_lengths field_types
+                   vars_or_symbols_or_tagged_immediates = 0 then
                 Lift (Immutable_block {
                   tag;
                   is_unique = blocks_imms.is_unique;
                   fields = vars_or_symbols_or_tagged_immediates;
                 })
-              | None -> try_canonical_simple ()
-            else
-              try_canonical_simple ()
+              else
+                try_canonical_simple ()
+            end
           end
         else if Row_like.For_blocks.is_bottom blocks then
           match prove_naked_immediates env imms with

@@ -62,13 +62,20 @@ type add_result = private {
   (** The canonical element of the combined equivalence class. In the type
       environment, this will be the name (if it is a name) that is assigned a
       concrete type. Does not carry a coercion. *)
-  demoted_alias: Simple.t;
+  alias_of_demoted_element : Simple.t;
   (** Whichever argument to [add] had its equivalence class consumed and its
       canonical element demoted to an alias. It is this name that needs its type
       to change to record the new canonical element. Its coercion has been
       adjusted so that it is properly an alias of [canonical_element]. *)
 }
 
+(** Add an alias relationship to the tracker. The two simple expressions
+    must be different and not both constants. If [add t s1 mode1 s2 mode2]
+    returns [{ t = t'; canonical_element; alias_of_demoted_element }], then
+    according to [t'],
+    - [canonical_element] is the canonical element of both [s1] and [s2];
+    - [alias_of_demoted_element] is either [s1] or [s2]; and
+    - [alias_of_demoted_element] is no longer canonical. *)
 val add
    : t
   -> element1:Simple.t
@@ -86,16 +93,40 @@ val get_canonical_element_exn
   -> Simple.t
   -> Name_mode.t
   -> min_name_mode:Name_mode.t
+  -> min_binding_time:Binding_time.t
   -> Simple.t
+
+module Alias_set : sig
+  (** The set of aliases of one particular [Simple.t], or an intersection of
+      such sets. *)
+  type t
+
+  val empty : t
+
+  val singleton : Simple.t -> t
+
+  val get_singleton : t -> Simple.t option
+
+  val inter : t -> t -> t
+
+  val filter : t -> f:(Simple.t -> bool) -> t
+
+  (** Return the best alias in the set, where constants are better than
+      symbols, which are better than variables, and ties are broken
+      (arbitrarily) by [Simple.compare]. Returns [None] if the alias set is
+      empty. *)
+  val find_best : t -> Simple.t option
+
+  val print : Format.formatter -> t -> unit
+end
 
 (** [get_aliases] always returns the supplied element in the result set. *)
-val get_aliases : t -> Simple.t -> Simple.Set.t
+val get_aliases : t -> Simple.t -> Alias_set.t
 
-val get_canonical_ignoring_name_mode
-   : t
-  -> Name.t
-  -> Simple.t
+val get_canonical_ignoring_name_mode : t -> Name.t -> Simple.t
 
 val merge : t -> t -> t
 
 val clean_for_export : t -> t
+
+val apply_renaming : t -> Renaming.t -> t

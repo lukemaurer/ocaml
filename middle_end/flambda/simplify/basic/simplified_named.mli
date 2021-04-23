@@ -43,7 +43,7 @@ val reachable : Named.t -> t
 
 (** It is an error to pass [Static_consts] to this function. *)
 val reachable_with_known_free_names
-  : find_cost_metrics:(Code_id.t -> Cost_metrics.t Or_unknown.t)
+  : find_code_characteristics:(Code_id.t -> Cost_metrics.code_characteristics)
   -> Named.t
   -> free_names:Name_occurrences.t
   -> t
@@ -53,3 +53,7 @@ val invalid : unit -> t
 val is_invalid : t -> bool
 
 val print : Format.formatter -> t -> unit
+
+val cost_metrics : t -> Cost_metrics.t
+
+val update_cost_metrics : Cost_metrics.t -> t -> t

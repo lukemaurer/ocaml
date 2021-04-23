@@ -58,17 +58,17 @@ module Make (Head : Type_head_intf.S
     let print ppf t =
       print_with_cache ~cache:(Printing_cache.create ()) ppf t
 
-    let apply_name_permutation t perm =
-      if Name_permutation.is_empty perm then t
+    let apply_renaming t renaming =
+      if Renaming.is_empty renaming then t
       else
         match t with
         | No_alias Bottom | No_alias Unknown -> t
         | No_alias (Ok head) ->
-          let head' = Head.apply_name_permutation head perm in
+          let head' = Head.apply_renaming head renaming in
           if head == head' then t
           else No_alias (Ok head')
         | Equals simple ->
-          let simple' = Simple.apply_name_permutation simple perm in
+          let simple' = Simple.apply_renaming simple renaming in
           if simple == simple' then t
           else Equals simple'
 
@@ -82,6 +82,8 @@ module Make (Head : Type_head_intf.S
           Name_mode.in_types
   end
 
+  (* CR mshinwell: Flambda 2 compilation is causing calls to e.g. [descr]
+     to be indirect. *)
   include With_delayed_permutation.Make (Descr)
 
   let all_ids_for_export t =
@@ -89,16 +91,6 @@ module Make (Head : Type_head_intf.S
     | No_alias Bottom | No_alias Unknown -> Ids_for_export.empty
     | No_alias (Ok head) -> Head.all_ids_for_export head
     | Equals simple -> Ids_for_export.from_simple simple
-
-  let import import_map t =
-    let descr : Descr.t =
-      match descr t with
-      | (No_alias Unknown | No_alias Bottom) as descr -> descr
-      | No_alias (Ok head) -> No_alias (Ok (Head.import import_map head))
-      | Equals simple ->
-        Equals (Ids_for_export.Import_map.simple import_map simple)
-    in
-    create descr
 
   let print_with_cache ~cache ppf t =
     Descr.print_with_cache ~cache ppf (descr t)
@@ -243,18 +235,17 @@ module Make (Head : Type_head_intf.S
 
   let all_aliases_of env simple_opt ~in_env =
     match simple_opt with
-    | None -> Simple.Set.empty
+    | None -> Aliases.Alias_set.empty
     | Some simple ->
       let simples =
-        Simple.Set.add simple (
-          TE.aliases_of_simple_allowable_in_types env simple)
+        TE.aliases_of_simple_allowable_in_types env simple
       in
       (*
       Format.eprintf "Aliases of %a are: %a\n%!"
         Simple.print simple
         Simple.Set.print simples;
       *)
-      Simple.Set.filter (fun simple ->
+      Aliases.Alias_set.filter ~f:(fun simple ->
           Typing_env.mem_simple in_env simple)
         simples
 
@@ -478,41 +469,23 @@ module Make (Head : Type_head_intf.S
         ~right_env:(Join_env.right_join_env join_env)
         ~right_ty:t2
     in
-    let choose_shared_alias ~shared_aliases =
-      match Simple.Set.elements shared_aliases with
-      | [] -> None
-      | shared_aliases ->
-        (* We prefer [Const]s, and if not, [Symbol]s. *)
-        (* CR mshinwell: Add this as a supported ordering in [Simple] *)
-        let shared_aliases =
-          List.sort (fun simple1 simple2 ->
-              let is_const1 = Simple.is_const simple1 in
-              let is_const2 = Simple.is_const simple2 in
-              match is_const1, is_const2 with
-              | true, false -> -1
-              | false, true -> 1
-              | true, true | false, false ->
-                let is_symbol1 = Simple.is_symbol simple1 in
-                let is_symbol2 = Simple.is_symbol simple2 in
-                match is_symbol1, is_symbol2 with
-                | true, false -> -1
-                | false, true -> 1
-                | true, true | false, false ->
-                  Simple.compare simple1 simple2)
-            shared_aliases
-        in
-        Some (create_equals (List.hd shared_aliases))
-    in
+
     (* CR mshinwell: Add shortcut when the canonical simples are equal *)
     let shared_aliases =
       let shared_aliases =
-        match canonical_simple1, canonical_simple2 with
-        | None, _ | _, None -> Simple.Set.empty
-        | Some simple1, Some simple2 ->
+        match canonical_simple1, head1, canonical_simple2, head2 with
+        | None, _, None, _
+        | None, (Ok _ | Unknown), _, _
+        | _, _, None, (Ok _ | Unknown) -> Aliases.Alias_set.empty
+        | Some simple1, _, _, Bottom ->
+          Aliases.Alias_set.singleton simple1
+        | _, Bottom, Some simple2, _ ->
+          Aliases.Alias_set.singleton simple2
+        | Some simple1, _, Some simple2, _ ->
           if Simple.same simple1 simple2
-          then Simple.Set.singleton simple1
+          then Aliases.Alias_set.singleton simple1
           else
-            Simple.Set.inter
+            Aliases.Alias_set.inter
               (all_aliases_of (Join_env.left_join_env join_env)
                 canonical_simple1
                 ~in_env:(Join_env.target_join_env join_env))
@@ -526,7 +499,7 @@ module Make (Head : Type_head_intf.S
         (* CR vlaviron: this ensures that we're not creating an alias
            to a different simple that is just bound_name with different
            coercion. Such an alias is forbidden. *)
-        Simple.Set.filter (fun simple ->
+        Aliases.Alias_set.filter ~f:(fun simple ->
             not (Simple.same simple (Simple.name bound_name)))
           shared_aliases
     in
@@ -534,8 +507,8 @@ module Make (Head : Type_head_intf.S
       Format.eprintf "Shared aliases:@ %a\n%!"
         Simple.Set.print shared_aliases;
         *)
-    match choose_shared_alias ~shared_aliases with
-    | Some joined_ty -> Known (to_type joined_ty)
+    match Aliases.Alias_set.find_best shared_aliases with
+    | Some alias -> Known (to_type (create_equals alias))
     | None ->
       match canonical_simple1, canonical_simple2 with
       | Some simple1, Some simple2

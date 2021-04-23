@@ -61,6 +61,7 @@ INCLUDES=-I utils -I parsing -I typing -I bytecomp -I file_formats \
         -I middle_end/flambda/compare \
         -I middle_end/flambda/from_lambda \
         -I middle_end/flambda/inlining \
+        -I middle_end/flambda/inlining/metrics \
         -I middle_end/flambda/lifting \
         -I middle_end/flambda/naming \
         -I middle_end/flambda/parser \
@@ -974,25 +975,13 @@ middle_end/flambda/terms/flambda.ml: \
 	  ../scripts/assemble_rec_modules.sh template/flambda.templ.ml \
 	    rec_modules flambda.ml
 
-SIMPLIFY_DEPS=$(shell sed -e "s|^\(.*\)|middle_end/flambda/simplify/\1 middle_end/flambda/simplify/\1i|g" \
-  middle_end/flambda/simplify/rec_modules | tr '\n' ' ')
-middle_end/flambda/simplify/simplify.ml: \
-  middle_end/flambda/simplify/template/simplify.templ.ml \
-  middle_end/flambda/simplify/rec_modules \
-  $(SIMPLIFY_DEPS)
-	cd middle_end/flambda/simplify && \
-	  ../scripts/assemble_rec_modules.sh template/simplify.templ.ml \
-	    rec_modules simplify.ml
-
 beforedepend:: \
   middle_end/flambda/types/flambda_type.ml \
-  middle_end/flambda/terms/flambda.ml \
-  middle_end/flambda/simplify/simplify.ml
+  middle_end/flambda/terms/flambda.ml
 
 clean::
 	rm -f middle_end/flambda/types/flambda_type.ml;
-	rm -f middle_end/flambda/terms/flambda.ml;
-	rm -f middle_end/flambda/simplify/simplify.ml
+	rm -f middle_end/flambda/terms/flambda.ml
 
 
 # Documentation
@@ -1180,6 +1169,7 @@ partialclean::
            middle_end/flambda/compare \
            middle_end/flambda/from_lambda \
            middle_end/flambda/inlining \
+           middle_end/flambda/inlining/metrics \
            middle_end/flambda/naming \
            middle_end/flambda/parser \
            middle_end/flambda/simplify \
@@ -1214,6 +1204,7 @@ depend: beforedepend
          middle_end/flambda/compare \
          middle_end/flambda/from_lambda \
          middle_end/flambda/inlining \
+         middle_end/flambda/inlining/metrics \
          middle_end/flambda/lifting \
          middle_end/flambda/naming \
          middle_end/flambda/parser \

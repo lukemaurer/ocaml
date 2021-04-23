@@ -222,7 +222,7 @@ let mk_inline_cost arg descr default f =
   Printf.sprintf "-inline-%s-cost" arg,
   Arg.String f,
   Printf.sprintf "<n>|<round>=<n>[,...]  The cost of not removing %s during \
-      inlining (default %d, higher numbers more costly)"
+      inlining (default %f, higher numbers more costly)"
     descr
     default
 ;;
@@ -235,9 +235,30 @@ let mk_inline_prim_cost =
   mk_inline_cost "prim" "a primitive" Clflags.default_inline_prim_cost
 let mk_inline_branch_cost =
   mk_inline_cost "branch" "a conditional" Clflags.default_inline_branch_cost
-let mk_inline_indirect_cost =
+let mk_inline_indirect_call_cost =
   mk_inline_cost "indirect" "an indirect call"
-    Clflags.default_inline_indirect_cost
+    Clflags.default_inline_indirect_call_cost
+let mk_inline_poly_compare_cost =
+  mk_inline_cost "poly-compare" "a polymorphic comparison"
+    Clflags.default_inline_poly_compare_cost
+
+(* CR mshinwell: We need to have a check that the parameters provided by
+   the user are sensible, e.g. small_function_size <= large_function_size. *)
+
+let mk_inline_small_function_size f =
+  "-inline-small-function-size", Arg.String f,
+  Printf.sprintf "<n>|<round>=<n>[,...] Functions with a cost less than this \
+                  size will always be inlined (default %d)."
+    Clflags.default_inline_small_function_size
+;;
+
+let mk_inline_large_function_size f =
+  "-inline-large-function-size", Arg.String f,
+  Printf.sprintf "<n>|<round>=<n>[,...] Functions with a cost greater than this \
+                  size will never be inlined (default %d)."
+    Clflags.default_inline_large_function_size
+;;
+
 
 let mk_inline_lifting_benefit f =
   "-inline-lifting-benefit",
@@ -988,20 +1009,6 @@ let mk_flambda_expert_max_inlining_depth f =
   " Set maximum inlining depth"
 ;;
 
-let mk_flambda_expert_small_function_threshold f =
-  "-flambda-expert-small-function-threshold", Arg.String f,
-  Printf.sprintf "<n>|<round>=<n>[,...] Functions with a cost less than this \
-                  threshold will always be inlined (default %d)."
-    Clflags.Flambda.Expert.default_small_function_threshold
-;;
-
-let mk_flambda_expert_big_function_threshold f =
-  "-flambda-expert-big-function-threshold", Arg.String f,
-  Printf.sprintf "<n>|<round>=<n>[,...] Functions with a cost greater than this \
-                  threshold will never be inlined (default %d)."
-    Clflags.Flambda.Expert.default_big_function_threshold
-;;
-
 let mk_flambda_expert_max_block_size_for_projections f =
   "-flambda-expert-max-block-size-for-projections", Arg.Int f,
   " Do not simplify projections from blocks if the block size exceeds \
@@ -1202,8 +1209,11 @@ module type Optcommon_options = sig
   val _inline_alloc_cost : string -> unit
   val _inline_prim_cost : string -> unit
   val _inline_branch_cost : string -> unit
-  val _inline_indirect_cost : string -> unit
+  val _inline_indirect_call_cost : string -> unit
+  val _inline_poly_compare_cost : string -> unit
   val _inline_lifting_benefit : string -> unit
+  val _inline_small_function_size : string -> unit
+  val _inline_large_function_size : string -> unit
   val _unbox_closures : unit -> unit
   val _unbox_closures_factor : int -> unit
   val _inline_branch_factor : string -> unit
@@ -1266,8 +1276,6 @@ module type Optcommon_options = sig
   val _flambda_expert_phantom_lets : unit -> unit
   val _no_flambda_expert_phantom_lets : unit -> unit
   val _flambda_expert_max_inlining_depth : int -> unit
-  val _flambda_expert_small_function_threshold : string -> unit
-  val _flambda_expert_big_function_threshold : string -> unit
   val _flambda_expert_max_block_size_for_projections : int -> unit
   val _flambda_debug_permute_every_name : unit -> unit
   val _no_flambda_debug_permute_every_name : unit -> unit
@@ -1526,8 +1534,11 @@ struct
     mk_inline_branch_cost F._inline_branch_cost;
     mk_inline_call_cost F._inline_call_cost;
     mk_inline_prim_cost F._inline_prim_cost;
-    mk_inline_indirect_cost F._inline_indirect_cost;
+    mk_inline_indirect_call_cost F._inline_indirect_call_cost;
+    mk_inline_poly_compare_cost F._inline_poly_compare_cost;
     mk_inline_lifting_benefit F._inline_lifting_benefit;
+    mk_inline_small_function_size F._inline_small_function_size;
+    mk_inline_large_function_size F._inline_large_function_size;
     mk_inlining_report F._inlining_report;
     mk_inlining_report_bin F._inlining_report_bin;
     mk_insn_sched F._insn_sched;
@@ -1634,10 +1645,6 @@ struct
       F._no_flambda_expert_phantom_lets;
     mk_flambda_expert_max_inlining_depth
       F._flambda_expert_max_inlining_depth;
-    mk_flambda_expert_small_function_threshold
-      F._flambda_expert_small_function_threshold;
-    mk_flambda_expert_big_function_threshold
-      F._flambda_expert_big_function_threshold;
     mk_flambda_expert_max_block_size_for_projections
       F._flambda_expert_max_block_size_for_projections;
     mk_flambda_debug_permute_every_name
@@ -1717,9 +1724,12 @@ module Make_opttop_options (F : Opttop_options) = struct
     mk_inline_alloc_cost F._inline_alloc_cost;
     mk_inline_prim_cost F._inline_prim_cost;
     mk_inline_branch_cost F._inline_branch_cost;
-    mk_inline_indirect_cost F._inline_indirect_cost;
+    mk_inline_indirect_call_cost F._inline_indirect_call_cost;
+    mk_inline_poly_compare_cost F._inline_poly_compare_cost;
     mk_inline_lifting_benefit F._inline_lifting_benefit;
     mk_inline_branch_factor F._inline_branch_factor;
+    mk_inline_small_function_size F._inline_small_function_size;
+    mk_inline_large_function_size F._inline_large_function_size;
     mk_labels F._labels;
     mk_alias_deps F._alias_deps;
     mk_no_alias_deps F._no_alias_deps;
@@ -1802,10 +1812,6 @@ module Make_opttop_options (F : Opttop_options) = struct
       F._no_flambda_expert_phantom_lets;
     mk_flambda_expert_max_inlining_depth
       F._flambda_expert_max_inlining_depth;
-    mk_flambda_expert_small_function_threshold
-      F._flambda_expert_small_function_threshold;
-    mk_flambda_expert_big_function_threshold
-      F._flambda_expert_big_function_threshold;
     mk_flambda_expert_max_block_size_for_projections
       F._flambda_expert_max_block_size_for_projections;
     mk_flambda_debug_permute_every_name
@@ -2039,11 +2045,11 @@ module Default = struct
       Float_arg_helper.parse spec "Syntax: -inline <n> | <round>=<n>[,...]"
         inline_threshold
     let _inline_alloc_cost spec =
-      Int_arg_helper.parse spec
+      Float_arg_helper.parse spec
         "Syntax: -inline-alloc-cost <n> | <round>=<n>[,...]"
         inline_alloc_cost
     let _inline_branch_cost spec =
-      Int_arg_helper.parse spec
+      Float_arg_helper.parse spec
         "Syntax: -inline-branch-cost <n> | <round>=<n>[,...]"
         inline_branch_cost
     let _inline_branch_factor spec =
@@ -2051,12 +2057,16 @@ module Default = struct
         "Syntax: -inline-branch-factor <n> | <round>=<n>[,...]"
         inline_branch_factor
     let _inline_call_cost spec =
-      Int_arg_helper.parse spec
+      Float_arg_helper.parse spec
         "Syntax: -inline-call-cost <n> | <round>=<n>[,...]" inline_call_cost
-    let _inline_indirect_cost spec =
-      Int_arg_helper.parse spec
-        "Syntax: -inline-indirect-cost <n> | <round>=<n>[,...]"
-        inline_indirect_cost
+    let _inline_indirect_call_cost spec =
+      Float_arg_helper.parse spec
+        "Syntax: -inline-indirect-call-cost <n> | <round>=<n>[,...]"
+        inline_indirect_call_cost
+    let _inline_poly_compare_cost spec =
+      Float_arg_helper.parse spec
+        "Syntax: -inline-poly-compare-cost <n> | <round>=<n>[,...]"
+        inline_poly_compare_cost
     let _inline_lifting_benefit spec =
       Int_arg_helper.parse spec
         "Syntax: -inline-lifting-benefit <n> | <round>=<n>[,...]"
@@ -2069,12 +2079,21 @@ module Default = struct
         "Syntax: -inline-max-unroll <n> | <round>=<n>[,...]"
         inline_max_unroll
     let _inline_prim_cost spec =
-      Int_arg_helper.parse spec
+      Float_arg_helper.parse spec
         "Syntax: -inline-prim-cost <n> | <round>=<n>[,...]" inline_prim_cost
     let _inline_toplevel spec =
       Int_arg_helper.parse spec
         "Syntax: -inline-toplevel <n> | <round>=<n>[,...]"
         inline_toplevel_threshold
+    let _inline_small_function_size spec =
+      Int_arg_helper.parse spec
+        "Syntax: -inline-small-function-size <n> | <round>=<n>[,...]"
+        inline_small_function_size
+    let _inline_large_function_size spec =
+      Int_arg_helper.parse spec
+        "Syntax: -inline-large-function-size <n> | <round>=<n>[,...]"
+        inline_large_function_size
+
     let _inlining_report () = inlining_report := true
     let _inlining_report_bin () = inlining_report_bin := true
     let _insn_sched = set insn_sched
@@ -2120,16 +2139,6 @@ module Default = struct
       clear Flambda.Expert.phantom_lets
     let _flambda_expert_max_inlining_depth depth =
       Flambda.Expert.max_inlining_depth := depth
-    let _flambda_expert_small_function_threshold spec =
-      Int_arg_helper.parse spec
-        "Syntax: -flambda-expert-small-function-threshold <n> | \
-         <round>=<n>[,...]"
-      Flambda.Expert.small_function_threshold
-    let _flambda_expert_big_function_threshold spec =
-      Int_arg_helper.parse spec
-        "Syntax: -flambda-expert-big-function-threshold <n> | \
-         <round>=<n>[,...]"
-        Flambda.Expert.big_function_threshold
     let _flambda_expert_max_block_size_for_projections size =
       Flambda.Expert.max_block_size_for_projections := Some size
     let _flambda_debug_permute_every_name =

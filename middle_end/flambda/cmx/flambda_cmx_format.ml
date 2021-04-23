@@ -62,7 +62,7 @@ let create ~final_typing_env ~all_code ~exported_offsets ~used_closure_vars =
       Variable.Map.empty
   in
   let simples =
-    Simple.Set.fold (fun simple simples ->
+    Reg_width_things.Simple.Set.fold (fun simple simples ->
         Simple.Map.add simple (Simple.export simple) simples)
       exported_ids.simples
       Simple.Map.empty
@@ -117,6 +117,9 @@ let import_typing_env_and_code0 t =
   let variables =
     Variable.Map.filter_map (filter Variable.import) t.table_data.variables
   in
+  let simples =
+    Simple.Map.filter_map (filter Simple.import) t.table_data.simples
+  in
   let consts =
     Const.Map.filter_map (filter Const.import) t.table_data.consts
   in
@@ -128,25 +131,8 @@ let import_typing_env_and_code0 t =
       t.table_data.continuations
   in
   let used_closure_vars = t.used_closure_vars in
-  (* Build a simple to simple converter from this *)
-  let import_map =
-    Ids_for_export.Import_map.create
-      ~symbols
-      ~variables
-      ~simples:Simple.Map.empty
-      ~consts
-      ~code_ids
-      ~continuations
-      ~used_closure_vars
-  in
-  let map_simple = Ids_for_export.Import_map.simple import_map in
-  (* Then convert the simples *)
-  let simples =
-    Simple.Map.filter_map (filter (Simple.import map_simple))
-      t.table_data.simples
-  in
-  let import_map =
-    Ids_for_export.Import_map.create
+  let renaming =
+    Renaming.create_import_map
       ~symbols
       ~variables
       ~simples
@@ -156,9 +142,10 @@ let import_typing_env_and_code0 t =
       ~used_closure_vars
   in
   let typing_env =
-    Flambda_type.Typing_env.Serializable.import import_map t.final_typing_env
+    Flambda_type.Typing_env.Serializable.apply_renaming t.final_typing_env
+      renaming
   in
-  let all_code = Exported_code.import import_map t.all_code in
+  let all_code = Exported_code.apply_renaming code_ids renaming t.all_code in
   typing_env, all_code
 
 let import_typing_env_and_code t =

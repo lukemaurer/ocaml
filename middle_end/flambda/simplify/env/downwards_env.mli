@@ -40,6 +40,7 @@ val create
   -> get_imported_code:get_imported_code
   -> float_const_prop:bool
   -> unit_toplevel_exn_continuation:Continuation.t
+  -> unit_toplevel_return_continuation:Continuation.t
   -> t
 
 (** Obtain the first-class module that gives information about the
@@ -62,9 +63,11 @@ val add_symbol_projection : t -> Variable.t -> Symbol_projection.t -> t
 
 val find_symbol_projection : t -> Variable.t -> Symbol_projection.t option
 
+val unit_toplevel_return_continuation : t -> Continuation.t
+
 val unit_toplevel_exn_continuation : t -> Continuation.t
 
-val enter_closure : t -> t
+val enter_set_of_closures : t -> t
 
 val increment_continuation_scope_level : t -> t
 
@@ -141,7 +144,12 @@ val add_parameters_with_unknown_types'
 
 val mark_parameters_as_toplevel : t -> Kinded_parameter.t list -> t
 
-val extend_typing_environment : t -> Flambda_type.Typing_env_extension.t -> t
+val add_variable_and_extend_typing_environment
+   : t
+  -> Var_in_binding_pos.t
+  -> Flambda_type.t
+  -> Flambda_type.Typing_env_extension.t
+  -> t
 
 val with_typing_env : t -> Flambda_type.Typing_env.t -> t
 
@@ -210,3 +218,27 @@ val add_use_of_closure_var : t -> Var_within_closure.t -> t
 val closure_var_uses : t -> Var_within_closure.Set.t
 
 val without_closure_var_uses : t -> t
+
+val set_do_not_rebuild_terms_and_disable_inlining : t -> t
+
+val set_rebuild_terms : t -> t
+
+type are_rebuilding_terms
+
+val are_rebuilding_terms : t -> are_rebuilding_terms
+
+val are_rebuilding_terms_to_bool : are_rebuilding_terms -> bool
+
+val enter_closure
+  : Code_id.t
+ -> Continuation.t
+ -> Exn_continuation.t
+ -> t -> t
+
+val closure_info : t -> Closure_info.t
+
+val inlining_arguments : t -> Inlining_arguments.t
+
+val restrict_inlining_arguments : Inlining_arguments.t -> t -> t
+
+val enter_inlined_apply : called_code:Code.t -> apply:Apply.t -> t -> t

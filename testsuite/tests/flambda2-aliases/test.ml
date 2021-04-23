@@ -40,8 +40,11 @@ let of_ok = function
   | Or_bottom.Bottom -> Misc.fatal_errorf "of_ok Bottom"
 
 let get_canonical aliases simple name_mode ~min_name_mode =
+  (* Punt on testing by min_binding_time but that's going away soon *)
+  let min_binding_time = Binding_time.consts_and_discriminants in
   match
-    Aliases.get_canonical_element_exn aliases simple name_mode ~min_name_mode
+    Aliases.get_canonical_element_exn aliases simple name_mode
+      ~min_binding_time ~min_name_mode
   with
   | exception Not_found -> None
   | canonical -> Some canonical
@@ -57,7 +60,7 @@ let add_alias
   let element2 =
     Simple.with_coercion element2 coercion_from_element2_to_element1
   in
-  let { Aliases.t; canonical_element; demoted_alias } =
+  let { Aliases.t; canonical_element; alias_of_demoted_element } =
     Aliases.add
       aliases
       ~element1
@@ -65,10 +68,12 @@ let add_alias
       ~element2
       ~binding_time_and_mode2
   in
-  let coercion_from_demoted_alias_to_canonical_element =
-    Simple.coercion demoted_alias
+  let coercion_from_alias_of_demoted_to_canonical =
+    Simple.coercion alias_of_demoted_element
   in
-  let demoted_alias = Simple.without_coercion demoted_alias in
+  let alias_of_demoted_element =
+    Simple.without_coercion alias_of_demoted_element
+  in
   let pp_name_mode ppf binding_time_and_mode =
     let name_mode =
       Binding_time.With_name_mode.name_mode binding_time_and_mode
@@ -80,8 +85,8 @@ let add_alias
   Format.fprintf ppf "[added] @[<hov 1>%a%a@] <--[%a]-- @[<hov 1>%a%a@]@."
     Simple.print canonical_element
     pp_name_mode binding_time_and_mode1
-    Coercion.print coercion_from_demoted_alias_to_canonical_element
-    Simple.print demoted_alias
+    Coercion.print coercion_from_alias_of_demoted_to_canonical
+    Simple.print alias_of_demoted_element
     pp_name_mode binding_time_and_mode2;
   t
 
@@ -508,7 +513,7 @@ let two_var_name_mode_test name mode_x mode_y min_name_mode =
        (pp_opt_or_none Simple.print)
          (get_canonical aliases y mode_y ~min_name_mode)
        Simple.print x
-       Simple.Set.print (Aliases.get_aliases aliases x))
+       Aliases.Alias_set.print (Aliases.get_aliases aliases x))
 
 let () =
   two_var_name_mode_test "name mode: phantom = phantom"
@@ -610,7 +615,7 @@ let () = test "three aliases (one inverse) /w modes" ~f:(fun ppf ->
   show_canonicals t v_t Name_mode.normal;
   Format.fprintf ppf "@.Aliases of %a: %a@.@.%a"
     Simple.print z
-    Simple.Set.print (Aliases.get_aliases aliases x)
+    Aliases.Alias_set.print (Aliases.get_aliases aliases x)
     Aliases.print aliases)
 
 

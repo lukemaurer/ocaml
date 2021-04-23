@@ -140,19 +140,30 @@ module Typing_env : sig
     -> Typing_env_extension.With_extra_variables.t
     -> t
 
-  (** Raises [Not_found] if no canonical [Simple] was found. *)
+  (** Raises [Not_found] if no canonical [Simple] was found.
+      [name_mode_of_existing_simple] can be provided to improve performance
+      of this function. *)
   val get_canonical_simple_exn
      : t
     -> ?min_name_mode:Name_mode.t
+    -> ?name_mode_of_existing_simple:Name_mode.t
     -> Simple.t
     -> Simple.t
 
   (** Raises [Not_found] if no canonical [Simple] was found. *)
-  val get_canonical_simple_with_kind_exn
+  val type_simple_in_term_exn
      : t
     -> ?min_name_mode:Name_mode.t
     -> Simple.t
-    -> Simple.t * Flambda_kind.t
+    -> flambda_type
+
+  (** Raises [Not_found] if no canonical [Simple] was found. *)
+  val get_alias_then_canonical_simple_exn
+     : t
+    -> ?min_name_mode:Name_mode.t
+    -> ?name_mode_of_existing_simple:Name_mode.t
+    -> flambda_type
+    -> Simple.t
 
   val add_to_code_age_relation : t -> newer:Code_id.t -> older:Code_id.t -> t
 
@@ -178,7 +189,7 @@ module Typing_env : sig
      : t
     -> min_name_mode:Name_mode.t
     -> Simple.t
-    -> Simple.Set.t
+    -> Aliases.Alias_set.t
 
   val clean_for_export : t -> reachable_names:Name_occurrences.t -> t
 
@@ -198,7 +209,7 @@ module Typing_env : sig
 
     val all_ids_for_export : t -> Ids_for_export.t
 
-    val import : Ids_for_export.Import_map.t -> t -> t
+    val apply_renaming : t -> Renaming.t -> t
 
     val merge : t -> t -> t
   end
@@ -429,6 +440,11 @@ val closure_with_at_least_this_closure_var
   -> closure_element_var:Variable.t
   -> flambda_type
 
+val closure_with_at_least_these_closure_vars
+   : this_closure:Closure_id.t
+  -> Variable.t Var_within_closure.Map.t
+  -> flambda_type
+
 val array_of_length : length:flambda_type -> flambda_type
 
 (** Construct a type equal to the type of the given name.  (The name
@@ -453,6 +469,8 @@ val bottom_types_from_arity : Flambda_arity.t -> t list
 (** Whether the given type says that a term of that type can never be
     constructed (in other words, it is [Invalid]). *)
 val is_bottom : (t -> bool) type_accessor
+
+val is_obviously_bottom : t -> bool
 
 val type_for_const : Reg_width_const.t -> t
 val kind_for_const : Reg_width_const.t -> Flambda_kind.t
@@ -495,15 +513,27 @@ val prove_naked_int64s : Typing_env.t -> t -> Numbers.Int64.Set.t proof
 
 val prove_naked_nativeints : Typing_env.t -> t -> Targetint.Set.t proof
 
-type variant_proof = private {
-  const_ctors : Target_imm.Set.t;
+type variant_like_proof = private {
+  const_ctors : Target_imm.Set.t Or_unknown.t;
   non_const_ctors_with_sizes : Targetint.OCaml.t Tag.Scannable.Map.t;
 }
 
-val prove_variant
+val prove_variant_like
    : Typing_env.t
   -> t
-  -> variant_proof proof_allowing_kind_mismatch
+  -> variant_like_proof proof_allowing_kind_mismatch
+
+(** If [ty] is known to represent a boxed number or a tagged integer,
+    [prove_is_a_boxed_number env ty] is [Proved kind]. [kind] is the kind of
+    the unboxed number.
+    If [ty] is known to represent something of kind value that is not a number
+    [prove_is_a_boxed_number env ty] is [Invalid].
+    Otherwise it is [Unknown] or [Wrong_kind] when [ty] is not of kind value.
+*)
+val prove_is_a_boxed_number
+   : Typing_env.t
+  -> t
+  -> Flambda_kind.Boxable_number.t proof_allowing_kind_mismatch
 
 val prove_is_a_tagged_immediate
    : Typing_env.t

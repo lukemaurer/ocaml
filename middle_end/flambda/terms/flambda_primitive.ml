@@ -52,6 +52,9 @@ module Block_kind = struct
   type t =
     | Values of Tag.Scannable.t * (Block_of_values_field.t list)
     | Naked_floats
+    (* There is no equivalent of the dynamic float array checks
+       (c.f. [Array_kind.Float_array_opt_dynamic], below) for blocks;
+       it is known at compile time whether they are all-float. *)
 
    let print ppf t =
     match t with
@@ -284,8 +287,26 @@ let reading_from_a_block mutable_or_immutable =
   in
   effects, coeffects
 
-let reading_from_an_array mutable_or_immutable =
-  reading_from_a_block mutable_or_immutable
+let reading_from_an_array (array_kind : Array_kind.t)
+      (mutable_or_immutable : Mutability.t) =
+  let effects : Effects.t =
+    match array_kind with
+    | Immediates
+    | Values
+    | Naked_floats -> No_effects
+    | Float_array_opt_dynamic ->
+      (* See [Un_cps_helpers.array_load] and [Cmm_helpers.float_array_ref].
+         If the array (dynamically) has tag [Double_array_tag], then the
+         read will allocate.
+         [Immutable] here means that the returned float itself is immutable. *)
+      Only_generative_effects Immutable
+  in
+  let coeffects =
+    match mutable_or_immutable with
+    | Immutable | Immutable_unique -> Coeffects.No_coeffects
+    | Mutable -> Coeffects.Has_coeffects
+  in
+  effects, coeffects
 
 let reading_from_a_string_or_bigstring mutable_or_immutable =
   reading_from_a_block mutable_or_immutable
@@ -1148,7 +1169,7 @@ let result_kind_of_binary_primitive p : result_kind =
 let effects_and_coeffects_of_binary_primitive p =
   match p with
   | Block_load (_, mut) -> reading_from_a_block mut
-  | Array_load (_, mut) -> reading_from_an_array mut
+  | Array_load (kind, mut) -> reading_from_an_array kind mut
   | Bigarray_load (_, kind, _) -> reading_from_a_bigarray kind
   | String_or_bigstring_load (String, _) ->
     reading_from_a_string_or_bigstring Immutable
@@ -1573,16 +1594,16 @@ let free_names t =
     ]
   | Variadic (_prim, xs) -> Simple.List.free_names xs
 
-let apply_name_permutation t perm =
+let apply_renaming t perm =
   (* CR mshinwell: add phys-equal checks *)
-  let apply simple = Simple.apply_name_permutation simple perm in
+  let apply simple = Simple.apply_renaming simple perm in
   match t with
   | Nullary _ -> t
   | Unary (prim, x0) -> Unary (prim, apply x0)
   | Binary (prim, x0, x1) -> Binary (prim, apply x0, apply x1)
   | Ternary (prim, x0, x1, x2) -> Ternary (prim, apply x0, apply x1, apply x2)
   | Variadic (prim, xs) ->
-    Variadic (prim, Simple.List.apply_name_permutation xs perm)
+    Variadic (prim, Simple.List.apply_renaming xs perm)
 
 let all_ids_for_export t =
   match t with
@@ -1596,27 +1617,6 @@ let all_ids_for_export t =
       x2
   | Variadic (_prim, xs) ->
     List.fold_left Ids_for_export.add_simple Ids_for_export.empty xs
-
-let import import_map t =
-  match t with
-  | Nullary _ -> t
-  | Unary (prim, x0) ->
-    let x0 = Ids_for_export.Import_map.simple import_map x0 in
-    Unary (prim, x0)
-  | Binary (prim, x0, x1) ->
-    let x0 = Ids_for_export.Import_map.simple import_map x0 in
-    let x1 = Ids_for_export.Import_map.simple import_map x1 in
-    Binary (prim, x0, x1)
-  | Ternary (prim, x0, x1, x2) ->
-    let x0 = Ids_for_export.Import_map.simple import_map x0 in
-    let x1 = Ids_for_export.Import_map.simple import_map x1 in
-    let x2 = Ids_for_export.Import_map.simple import_map x2 in
-    Ternary (prim, x0, x1, x2)
-  | Variadic (prim, xs) ->
-    let xs =
-      List.map (Ids_for_export.Import_map.simple import_map) xs
-    in
-    Variadic (prim, xs)
 
 let args t =
   match t with
@@ -1836,7 +1836,7 @@ module Eligible_for_cse = struct
       else None
 
   let free_names = free_names
-  let apply_name_permutation = apply_name_permutation
+  let apply_renaming = apply_renaming
 
   include Identifiable.Make (struct
     type nonrec t = t

@@ -39,11 +39,14 @@ type t = {
   float_const_prop : bool;
   code : Code.t Code_id.Map.t;
   at_unit_toplevel : bool;
+  unit_toplevel_return_continuation : Continuation.t;
   unit_toplevel_exn_continuation : Continuation.t;
   symbols_currently_being_defined : Symbol.Set.t;
   variables_defined_at_toplevel : Variable.Set.t;
   cse : CSE.t;
   closure_var_uses : Var_within_closure.Set.t;
+  do_not_rebuild_terms : bool;
+  closure_info : Closure_info.t;
 }
 
 let print ppf { backend = _; round; typing_env; get_imported_code = _;
@@ -52,7 +55,8 @@ let print ppf { backend = _; round; typing_env; get_imported_code = _;
                 code; at_unit_toplevel; unit_toplevel_exn_continuation;
                 symbols_currently_being_defined;
                 variables_defined_at_toplevel; cse;
-                closure_var_uses;
+                closure_var_uses; do_not_rebuild_terms; closure_info;
+                unit_toplevel_return_continuation;
               } =
   Format.fprintf ppf "@[<hov 1>(\
       @[<hov 1>(round@ %d)@]@ \
@@ -62,11 +66,14 @@ let print ppf { backend = _; round; typing_env; get_imported_code = _;
       @[<hov 1>(inlining_state@ %a)@]@ \
       @[<hov 1>(float_const_prop@ %b)@]@ \
       @[<hov 1>(at_unit_toplevel@ %b)@]@ \
+      @[<hov 1>(unit_toplevel_return_continuation@ %a)@]@ \
       @[<hov 1>(unit_toplevel_exn_continuation@ %a)@]@ \
       @[<hov 1>(symbols_currently_being_defined@ %a)@]@ \
       @[<hov 1>(variables_defined_at_toplevel@ %a)@]@ \
       @[<hov 1>(cse@ @[<hov 1>%a@])@]@ \
       @[<hov 1>(closure_var_uses@ @[<hov 1>%a@])@]@ \
+      @[<hov 1>(do_not_rebuild_terms@ %b)@]@ \
+      @[<hov 1>(closure_info@ %a)@]@ \
       @[<hov 1>(code@ %a)@]\
       )@]"
     round
@@ -76,11 +83,14 @@ let print ppf { backend = _; round; typing_env; get_imported_code = _;
     Inlining_state.print inlining_state
     float_const_prop
     at_unit_toplevel
+    Continuation.print unit_toplevel_return_continuation
     Continuation.print unit_toplevel_exn_continuation
     Symbol.Set.print symbols_currently_being_defined
     Variable.Set.print variables_defined_at_toplevel
     CSE.print cse
     Var_within_closure.Set.print closure_var_uses
+    do_not_rebuild_terms
+    Closure_info.print closure_info
     (Code_id.Map.print Code.print) code
 
 let invariant _t = ()
@@ -88,22 +98,29 @@ let invariant _t = ()
 let create ~round ~backend ~(resolver : resolver)
       ~(get_imported_names : get_imported_names)
       ~(get_imported_code : get_imported_code)
-      ~float_const_prop ~unit_toplevel_exn_continuation =
+      ~float_const_prop ~unit_toplevel_exn_continuation
+      ~unit_toplevel_return_continuation =
   { backend;
     round;
     typing_env = TE.create ~resolver ~get_imported_names;
     get_imported_code;
     inlined_debuginfo = Debuginfo.none;
     can_inline = true;
-    inlining_state = Inlining_state.default;
+    inlining_state =
+      Inlining_state.default
+      |> Inlining_state.with_arguments
+           (Inlining_arguments.create ~round);
     float_const_prop;
     code = Code_id.Map.empty;
     at_unit_toplevel = true;
+    unit_toplevel_return_continuation;
     unit_toplevel_exn_continuation;
     symbols_currently_being_defined = Symbol.Set.empty;
     variables_defined_at_toplevel = Variable.Set.empty;
     cse = CSE.empty;
     closure_var_uses = Var_within_closure.Set.empty;
+    do_not_rebuild_terms = false;
+    closure_info = Closure_info.not_in_a_closure;
   }
 
 let resolver t = TE.resolver t.typing_env
@@ -115,6 +132,7 @@ let can_inline t = t.can_inline
 let float_const_prop t = t.float_const_prop
 
 let unit_toplevel_exn_continuation t = t.unit_toplevel_exn_continuation
+let unit_toplevel_return_continuation t = t.unit_toplevel_return_continuation
 
 let at_unit_toplevel t = t.at_unit_toplevel
 
@@ -174,15 +192,18 @@ let symbol_is_currently_being_defined t symbol =
 let symbols_currently_being_defined t =
   t.symbols_currently_being_defined
 
-let enter_closure { backend; round; typing_env; get_imported_code;
-                    inlined_debuginfo = _; can_inline;
-                    inlining_state;
-                    float_const_prop; code; at_unit_toplevel = _;
-                    unit_toplevel_exn_continuation;
-                    symbols_currently_being_defined;
-                    variables_defined_at_toplevel; cse = _;
-                    closure_var_uses = _;
-                  } =
+let enter_set_of_closures
+      { backend; round; typing_env; get_imported_code;
+        inlined_debuginfo = _; can_inline;
+        inlining_state;
+        float_const_prop; code; at_unit_toplevel = _;
+        unit_toplevel_return_continuation;
+        unit_toplevel_exn_continuation;
+        symbols_currently_being_defined;
+        variables_defined_at_toplevel; cse = _;
+        closure_var_uses = _; do_not_rebuild_terms;
+        closure_info = _;
+      } =
   { backend;
     round;
     typing_env = TE.closure_env typing_env;
@@ -193,11 +214,14 @@ let enter_closure { backend; round; typing_env; get_imported_code;
     float_const_prop;
     code;
     at_unit_toplevel = false;
+    unit_toplevel_return_continuation;
     unit_toplevel_exn_continuation;
     symbols_currently_being_defined;
     variables_defined_at_toplevel;
     cse = CSE.empty;
     closure_var_uses = Var_within_closure.Set.empty;
+    do_not_rebuild_terms;
+    closure_info = Closure_info.in_a_set_of_closures;
   }
 
 let define_variable t var kind =
@@ -408,10 +432,25 @@ let mark_parameters_as_toplevel t params =
   in
   { t with variables_defined_at_toplevel; }
 
-let extend_typing_environment t env_extension =
-  let typing_env = TE.add_env_extension t.typing_env env_extension in
+let add_variable_and_extend_typing_environment t var ty env_extension =
+  (* This is a combined operation to reduce allocation. *)
+  let typing_env =
+    let var' = Name_in_binding_pos.var var in
+    TE.add_equation
+      (TE.add_definition t.typing_env var' (T.kind ty))
+      (Name.var (Var_in_binding_pos.var var)) ty
+  in
+  let variables_defined_at_toplevel =
+    if t.at_unit_toplevel then
+      Variable.Set.add (Var_in_binding_pos.var var)
+        t.variables_defined_at_toplevel
+    else
+      t.variables_defined_at_toplevel
+  in
+  let typing_env = TE.add_env_extension typing_env env_extension in
   { t with
     typing_env;
+    variables_defined_at_toplevel;
   }
 
 let with_typing_env t typing_env =
@@ -541,4 +580,52 @@ let closure_var_uses t = t.closure_var_uses
 let without_closure_var_uses t =
   { t with
     closure_var_uses = Var_within_closure.Set.empty;
+  }
+
+let set_do_not_rebuild_terms_and_disable_inlining t =
+  { t with
+    do_not_rebuild_terms = true;
+    can_inline = false;
+  }
+
+let set_rebuild_terms t = { t with do_not_rebuild_terms = false }
+
+type are_rebuilding_terms = bool
+
+let are_rebuilding_terms t = not t.do_not_rebuild_terms
+
+let are_rebuilding_terms_to_bool are_rebuilding = are_rebuilding
+
+let enter_closure code_id return_continuation exn_continuation t =
+  { t with
+    closure_info = Closure_info.in_a_closure
+                     code_id return_continuation exn_continuation;
+  }
+
+let closure_info t = t.closure_info
+
+let inlining_arguments { inlining_state; _ } =
+  Inlining_state.arguments inlining_state
+
+let restrict_inlining_arguments inlining_arguments t =
+  let arguments =
+    Inlining_state.arguments t.inlining_state
+    |> Inlining_arguments.meet inlining_arguments
+  in
+  { t with inlining_state =
+             Inlining_state.with_arguments arguments t.inlining_state
+  }
+
+let enter_inlined_apply ~called_code ~apply t =
+  let arguments =
+    Inlining_state.arguments t.inlining_state
+    |> Inlining_arguments.meet (Code.inlining_arguments called_code)
+    |> Inlining_arguments.meet (Apply.inlining_arguments apply)
+  in
+  { t with
+    inlined_debuginfo = Apply.dbg apply;
+    inlining_state =
+      t.inlining_state
+      |> Inlining_state.increment_depth
+      |> Inlining_state.with_arguments arguments;
   }
