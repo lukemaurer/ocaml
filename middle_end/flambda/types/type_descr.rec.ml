@@ -129,17 +129,15 @@ module Make (Head : Type_head_intf.S
       | Equals alias -> alias
       | No_alias _ -> assert false
 
-  let apply_coercion t coercion : _ Or_bottom.t =
+  let apply_coercion env t coercion : _ Or_bottom.t =
     match descr t with
     | Equals simple ->
-      begin match Simple.apply_coercion simple coercion with
-      | None -> Bottom
-      | Some simple -> Ok (create_equals simple)
-      end
+      let simple = Simple.apply_coercion simple coercion in
+      Ok (create_equals simple)
     | No_alias Unknown -> Ok t
     | No_alias Bottom -> Bottom
     | No_alias (Ok head) ->
-      Or_bottom.map (Head.apply_coercion head coercion)
+      Or_bottom.map (Head.apply_coercion env head coercion)
         ~f:(fun head -> create head)
 
   let force_to_head ~force_to_kind t =

@@ -23,8 +23,8 @@ module DE = Downwards_env
 module I = Flambda_type.Function_declaration_type.Inlinable
 module VB = Var_in_binding_pos
 
-let make_inlined_body ~callee ~unroll_to ~params ~args ~my_closure ~body
-      ~exn_continuation ~return_continuation ~apply_exn_continuation
+let make_inlined_body ~callee ~params ~args ~my_closure ~depth_param
+      ~body ~exn_continuation ~return_continuation ~apply_exn_continuation
       ~apply_return_continuation =
   let perm = Renaming.empty in
   let perm =
@@ -39,24 +39,38 @@ let make_inlined_body ~callee ~unroll_to ~params ~args ~my_closure ~body
       (Exn_continuation.exn_handler exn_continuation)
       apply_exn_continuation
   in
+  let old_depth =
+    Coercion.interpret (Simple.coercion callee) Depth_expr.Zero
+      ~change_depth:(fun _depth ~from:_ ~to_ -> to_)
+  in
+  let new_depth = Depth_expr.Succ old_depth in
+  let new_depth_var = Depth_variable.rename depth_param in
   let callee =
-    (* CR xclerc for xclerc: build the proper coercion. *)
-    Simple.apply_coercion callee (ignore unroll_to; Coercion.id)
-    |> Option.get  (* CR mshinwell: improve *)
+    Simple.apply_coercion callee
+      (Coercion.change_depth ~from:old_depth ~to_:new_depth)
+  in
+  let body =
+    Let.create
+      (Bindable_let_bound.singleton
+         (VB.create my_closure Name_mode.normal))
+      (Named.create_simple callee)
+      ~body
+      (* Here and below, we don't need to give any name occurrence
+         information (thank goodness!) since the entirety of the
+         expression we're building will be re-simplified. *)
+      ~free_names_of_body:Unknown
+    |> Expr.create_let
+  in
+  let body =
+    Let.create
+      (Bindable_let_bound.depth depth_param)
+      (Named.create_depth (Depth_expr.Var new_depth_var))
+      ~body
+      ~free_names_of_body:Unknown
+    |> Expr.create_let
   in
   Expr.apply_renaming
-    (Expr.bind_parameters_to_args_no_simplification
-       ~params ~args
-       ~body:(Let.create
-                (Bindable_let_bound.singleton
-                   (VB.create my_closure Name_mode.normal))
-                (Named.create_simple callee)
-                ~body
-                (* Here and below, we don't need to give any name occurrence
-                   information (thank goodness!) since the entirety of the
-                   expression we're building will be re-simplified. *)
-                ~free_names_of_body:Unknown
-              |> Expr.create_let))
+    (Expr.bind_parameters_to_args_no_simplification ~params ~args ~body)
     perm
 
 let wrap_inlined_body_for_exn_support ~extra_args ~apply_exn_continuation
@@ -179,9 +193,10 @@ let inline dacc ~apply ~unroll_to function_decl =
   in
   Function_params_and_body.pattern_match params_and_body
     ~f:(fun ~return_continuation exn_continuation params ~body ~my_closure
-            ~is_my_closure_used:_ ->
+            ~is_my_closure_used:_ ~depth ->
           let make_inlined_body =
-            make_inlined_body ~callee ~unroll_to ~params ~args ~my_closure ~body
+            make_inlined_body ~callee ~params ~args ~my_closure
+              ~depth_param:depth ~body
               ~exn_continuation ~return_continuation
           in
           let expr =

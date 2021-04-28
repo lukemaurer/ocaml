@@ -488,6 +488,8 @@ and let_expr env le =
     match bound with
     | Singleton var ->
       dynamic_let_expr env [ var ] defining_expr body
+    | Depth dv ->
+      let_depth_expr env dv defining_expr body
     | Set_of_closures { closure_vars; _ } ->
       dynamic_let_expr env closure_vars defining_expr body
     | Symbols { scoping_rule = Dominator; _ } ->
@@ -513,6 +515,7 @@ and dynamic_let_expr env vars (defining_expr : Flambda.Named.t) body
         List.map (fun decl : Fexpr.named -> Fexpr.Closure decl) fun_decls
       in
       defining_exprs, closure_elements
+    | Depth _
     | Static_consts _ ->
       assert false
   in
@@ -523,6 +526,9 @@ and dynamic_let_expr env vars (defining_expr : Flambda.Named.t) body
       { Fexpr.var; kind = None; defining_expr }
     ) vars defining_exprs in
   Let { bindings; closure_elements; body }
+and let_depth_expr _env _dv (_defining_expr : Flambda.Named.t) _body
+      : Fexpr.expr =
+  assert false (* TODO *)
 and static_let_expr env bound_symbols defining_expr body : Fexpr.expr =
   let static_consts =
     match defining_expr with
@@ -612,7 +618,8 @@ and static_let_expr env bound_symbols defining_expr body : Fexpr.expr =
           let params_and_body =
             Flambda.Function_params_and_body.pattern_match params_and_body
               ~f:(fun ~return_continuation exn_continuation params ~body
-                  ~my_closure ~is_my_closure_used:_ : Fexpr.params_and_body ->
+                  ~my_closure ~is_my_closure_used:_ ~depth:_
+                    : Fexpr.params_and_body ->
                 let ret_cont, env =
                   Env.bind_named_continuation env return_continuation
                 in

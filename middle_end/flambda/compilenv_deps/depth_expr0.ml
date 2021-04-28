@@ -17,46 +17,43 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-type t = {
-  offset : int;
-  var : Depth_variable.t option;
-  unroll_depth : int option;
-}
+type t =
+  | Zero
+  | Var of Depth_variable.t
+  | Succ of t
+  | Unroll_to of int * t
 
-let zero = { offset = 0; var = None; unroll_depth = None; }
+let rec print ppf = function
+  | Zero ->
+    Format.pp_print_string ppf "0"
+  | Var v ->
+    Depth_variable.print ppf v
+  | Succ t ->
+    let rec find_end t exp =
+      match t with
+      | Succ t -> find_end t (exp + 1)
+      | Zero | Var _ | Unroll_to _ -> t, exp
+    in
+    let t, exp = find_end t 1 in
+    let exp = if exp >= 2 then Format.sprintf "^%d" exp else "" in
+    Format.fprintf ppf "@[<hov 1>(succ%s@ %a)@]" exp print t
+  | Unroll_to (depth, t) ->
+    Format.fprintf ppf "@[<hov 1>(unroll_to@ %d@ %a)]"
+      depth
+      print t
 
-let succ { offset; var; unroll_depth; } =
-  let offset = offset + 1 in
-  let unroll_depth =
-    match unroll_depth with
-    | None | Some 0 -> unroll_depth
-    | Some n -> Some (n-1)
-  in
-  { offset; var; unroll_depth; }
+let rec equal t1 t2 =
+  match t1, t2 with
+  | Zero, Zero -> true
+  | Var v1, Var v2 -> Depth_variable.equal v1 v2
+  | Succ t1, Succ t2 -> equal t1 t2
+  | Unroll_to (depth1, t1), Unroll_to (depth2, t2) -> depth1 = depth2 && equal t1 t2
+  | (Zero | Var _ | Succ _ | Unroll_to _), _ -> false
 
-let var var = { offset = 0; var = Some var; unroll_depth = None; }
-
-let with_unroll_depth t unroll_depth =
-  { t with unroll_depth = Some unroll_depth }
-
-let print ppf { offset; var; unroll_depth } =
-  let offset_and_var ppf () =
-    match offset, var with
-    | 0, Some var -> Depth_variable.print ppf var
-    | n, None -> Format.fprintf ppf "%d" n
-    | n, Some var -> Format.fprintf ppf "%d+%a" n Depth_variable.print var
-  in
-  match unroll_depth with
-  | None -> offset_and_var ppf ()
-  | Some unroll_depth ->
-      Format.fprintf ppf "@[<hov 1>(%a@ @[<hov 1>(unroll_depth@ %d)@])@]"
-        offset_and_var ()
-        unroll_depth
-
-type descr = t = {
-  offset : int;
-  var : Depth_variable.t option;
-  unroll_depth : int option;
-}
-
-let descr t = t
+let rec hash =
+  let zero_hash = Hashtbl.hash 0 in
+  function
+  | Zero -> zero_hash
+  | Var v -> Hashtbl.hash (1, Depth_variable.hash v)
+  | Succ t -> Hashtbl.hash (2, hash t)
+  | Unroll_to (d, t) -> Hashtbl.hash (3, Hashtbl.hash d, hash t)

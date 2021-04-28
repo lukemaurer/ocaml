@@ -396,25 +396,37 @@ let might_inline dacc ~apply ~function_decl ~simplify_expr ~return_arity
       Speculatively_not_inline { cost_metrics; evaluated_to; threshold }
 
 let make_decision_for_call_site dacc ~simplify_expr ~function_decl
-      ~function_decl_rec_info:_ ~apply ~return_arity : Call_site_decision.t =
+      ~apply ~return_arity : Call_site_decision.t =
   let inline = Apply.inline apply in
+  let function_decl_rec_info =
+    Flambda_type.Function_declaration_type.Inlinable.rec_info function_decl
+  in
   match inline with
   | Never_inline -> Never_inline_attribute
   | Default_inline | Unroll _ | Always_inline | Hint_inline ->
-    let apply_inlining_state = Apply.inlining_state apply in
-    if Inlining_state.is_depth_exceeded apply_inlining_state
-    then
-      Max_inlining_depth_exceeded
-    else
-      match inline with
-      | Never_inline -> assert false
-      | Default_inline ->
+    match Rec_info.unroll_to function_decl_rec_info with
+    | Some unroll_to ->
+      if Rec_info.depth function_decl_rec_info >= unroll_to then
+        Unrolling_depth_exceeded
+      else
         might_inline dacc ~apply ~function_decl ~simplify_expr ~return_arity
-      | Unroll unroll_to ->
-        Attribute_unroll unroll_to
-      | Always_inline | Hint_inline ->
-        Attribute_always
-
-let _ = Call_site_decision.Unrolling_depth_exceeded
-let _ = Call_site_decision.Recursion_depth_exceeded
-let _ = max_rec_depth
+    | None ->
+      let apply_inlining_state = Apply.inlining_state apply in
+      if Inlining_state.is_depth_exceeded apply_inlining_state
+      then
+        Max_inlining_depth_exceeded
+      else
+        match inline with
+        | Never_inline -> assert false
+        | Default_inline ->
+          if Rec_info.depth function_decl_rec_info >= max_rec_depth then
+            Recursion_depth_exceeded
+          else
+            might_inline dacc ~apply ~function_decl ~simplify_expr ~return_arity
+        | Unroll unroll_to ->
+          let unroll_to =
+            Rec_info.depth function_decl_rec_info + unroll_to
+          in
+          Attribute_unroll unroll_to
+        | Always_inline | Hint_inline ->
+          Attribute_always

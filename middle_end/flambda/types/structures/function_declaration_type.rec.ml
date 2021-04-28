@@ -49,13 +49,14 @@ module Inlinable = struct
 
   let code_id t = t.code_id
   let dbg t = t.dbg
+  let rec_info t = t.rec_info
   let is_tupled t = t.is_tupled
 
   let apply_renaming
         ({ code_id; dbg = _; rec_info = _; is_tupled = _; } as t) renaming =
     let code_id' = Renaming.apply_code_id renaming code_id in
     if code_id == code_id' then t
-    else { t with code_id = code_id'; rec_info = Rec_info.unknown }
+    else { t with code_id = code_id' }
 
 end
 
@@ -168,13 +169,13 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
   | Ok (Inlinable {
       code_id = code_id1;
       dbg = dbg1;
-      rec_info = _;
+      rec_info = rec_info1;
       is_tupled = is_tupled1;
     }),
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      rec_info = _;
+      rec_info = rec_info2;
       is_tupled = is_tupled2;
     }) ->
     let typing_env = Meet_env.env env in
@@ -183,13 +184,15 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
     let check_other_things_and_return code_id : (t * TEE.t) Or_bottom.t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
       assert (Bool.equal is_tupled1 is_tupled2);
-      Ok (Ok (Inlinable {
-          code_id;
-          dbg = dbg1;
-          rec_info = Rec_info.unknown;
-          is_tupled = is_tupled1;
-        }),
-        TEE.empty ())
+      if Rec_info.equal rec_info1 rec_info2 then
+        Ok (Ok (Inlinable {
+            code_id;
+            dbg = dbg1;
+            rec_info = rec_info1;
+            is_tupled = is_tupled1;
+          }),
+          TEE.empty ())
+      else Bottom
     in
     begin match
       Code_age_relation.meet target_code_age_rel ~resolver code_id1 code_id2
@@ -239,13 +242,13 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
   | Ok (Inlinable {
       code_id = code_id1;
       dbg = dbg1;
-      rec_info = _;
+      rec_info = rec_info1;
       is_tupled = is_tupled1;
     }),
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      rec_info = _;
+      rec_info = rec_info2;
       is_tupled = is_tupled2;
     }) ->
     let typing_env = Join_env.target_join_env env in
@@ -254,12 +257,14 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
     let check_other_things_and_return code_id : t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
       assert (Bool.equal is_tupled1 is_tupled2);
-      Ok (Inlinable {
-        code_id;
-        dbg = dbg1;
-        rec_info = Rec_info.unknown;
-        is_tupled = is_tupled1;
-      })
+      if Rec_info.equal rec_info1 rec_info2 then
+        Ok (Inlinable {
+          code_id;
+          dbg = dbg1;
+          rec_info = rec_info1;
+          is_tupled = is_tupled1;
+        })
+      else Unknown
     in
     let code_age_rel1 =
       TE.code_age_relation (Join_env.left_join_env env)
@@ -275,5 +280,40 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
     | Unknown -> Unknown
     end
 
-let apply_coercion (t : t) _coercion : t Or_bottom.t =
-  Ok t
+(* CR lmaurer: Not sure this is exactly where this function belongs *)
+let rec eval_depth_expr env : Depth_expr.t -> Rec_info.t = function
+  | Zero -> Rec_info.initial
+  | Var dv -> TE.find_depth_variable env dv
+  | Succ e ->
+    let rec_info = eval_depth_expr env e in
+    let depth = Rec_info.depth rec_info + 1 in
+    let unroll_to =
+      Option.map (fun unroll_depth ->
+        if unroll_depth = 0 then 0 else unroll_depth - 1
+      ) (Rec_info.unroll_to rec_info)
+    in
+    Rec_info.create ~depth ~unroll_to
+  | Unroll_to (unroll_depth, e) ->
+    let rec_info = eval_depth_expr env e in
+    let depth = Rec_info.depth rec_info in
+    let unroll_to = match Rec_info.unroll_to rec_info with
+    | None -> Some unroll_depth
+    | Some old_unroll_depth ->
+      (* Not clear how we'd get here, but safe to unroll less deeply *)
+      Some (min unroll_depth old_unroll_depth)
+    in
+    Rec_info.create ~depth ~unroll_to
+
+let apply_coercion env (t : t) coercion =
+  Coercion.interpret coercion t ~change_depth:(fun (t : t) ~from ~to_ : t ->
+    match t with
+    | Unknown -> Unknown
+    | Bottom -> Bottom
+    | Ok (Non_inlinable _) -> t
+    | Ok (Inlinable i) ->
+      let from = from |> eval_depth_expr env in
+      if Rec_info.equal from (Inlinable.rec_info i) then
+        let to_ = to_ |> eval_depth_expr env in
+        Ok (Inlinable { i with rec_info = to_ })
+      else Bottom
+  )

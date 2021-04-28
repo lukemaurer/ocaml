@@ -63,9 +63,9 @@ val add_name : t -> Name.t -> Name_mode.t -> t
 
 val add_closure_var : t -> Var_within_closure.t -> Name_mode.t -> t
 
-val singleton_depth_variable : Depth_variable.t -> Name_mode.t -> t
+val singleton_depth_variable : Depth_variable.t -> t
 
-val add_depth_variable : t -> Depth_variable.t -> Name_mode.t -> t
+val add_depth_variable : t -> Depth_variable.t -> t
 
 val singleton_code_id : Code_id.t -> Name_mode.t -> t
 

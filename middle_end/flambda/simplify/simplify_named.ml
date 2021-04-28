@@ -158,11 +158,11 @@ let simplify_named0 dacc (bindable_let_bound : Bindable_let_bound.t)
     in
     Simplify_named_result.have_simplified_to_single_term dacc
       bindable_let_bound defining_expr ~original_defining_expr:named
-      bindable_let_bound defining_expr ~original_defining_expr:named
   | Depth _ ->
     (* CR lmaurer: Substitute for depth variables? *)
     Simplify_named_result.have_simplified_to_single_term dacc
       bindable_let_bound (Simplified_named.reachable named)
+      ~original_defining_expr:named
   | Prim (prim, dbg) ->
     let bound_var = Bindable_let_bound.must_be_singleton bindable_let_bound in
     let term, env_extension, simplified_args, dacc =
@@ -326,12 +326,14 @@ let removed_operations (named : Named.t) result =
                benefit *)
             zero
           | Invalid _
+          | Reachable { named = Depth _; _ }
           | Reachable { named = Prim _; _ }
           | Reachable {named = Simple _; _} ->
             assert false
         end
       | Zero_terms -> assert false
     end
+  | Depth _ -> zero
   | Static_consts _ -> begin
       match descr with
       | Zero_terms -> zero
@@ -346,6 +348,7 @@ let removed_operations (named : Named.t) result =
             (* A simple has 0 benefit.*)
             zero
           | Invalid _
+          | Reachable { named = Depth _; _ }
           | Reachable { named = Set_of_closures _; _ }
           | Reachable { named = Prim _; _ } ->
             assert false
@@ -367,6 +370,8 @@ let removed_operations (named : Named.t) result =
           | Reachable { named = Set_of_closures _; _}
           | Invalid _ ->
             Removed_operations.prim original_prim
+          | Reachable { named = Depth _; _ } ->
+            assert false
         end
       | Zero_terms | Multiple_bindings_to_symbols _ -> assert false
     end

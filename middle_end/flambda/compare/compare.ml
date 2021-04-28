@@ -237,6 +237,10 @@ let subst_simple env s =
     ~name:(fun n -> Simple.name (subst_name env n))
 ;;
 
+let subst_depth_expr _env (d : Depth_expr.t) : Depth_expr.t =
+  (* Depth expressions cannot have free ids of the sorts we substitute for *)
+  d
+
 let subst_unary_primitive env (p : Flambda_primitive.unary_primitive)
       : Flambda_primitive.unary_primitive =
   match p with
@@ -329,6 +333,7 @@ and subst_let_expr env let_expr =
 and subst_named env (n : Named.t) =
   match n with
   | Simple s -> Named.create_simple (subst_simple env s)
+  | Depth d -> Named.create_depth (subst_depth_expr env d)
   | Prim (p, dbg) -> Named.create_prim (subst_primitive env p) dbg
   | Set_of_closures set ->
     Named.create_set_of_closures (subst_set_of_closures env set)
@@ -1210,13 +1215,13 @@ and codes env (code1 : Code.t) (code2 : Code.t) =
     Function_params_and_body.pattern_match_pair
       params_and_body1 params_and_body2
       ~f:(fun ~return_continuation exn_continuation params ~body1 ~body2
-              ~my_closure ->
+              ~my_closure ~depth ->
         exprs env body1 body2
         |> Comparison.map ~f:(fun body1' ->
              let dbg = Function_params_and_body.debuginfo params_and_body1 in
              Function_params_and_body.create
                ~return_continuation exn_continuation params ~dbg ~body:body1'
-               ~my_closure ~free_names_of_body:Unknown
+               ~my_closure ~depth ~free_names_of_body:Unknown
            )
       )
   in

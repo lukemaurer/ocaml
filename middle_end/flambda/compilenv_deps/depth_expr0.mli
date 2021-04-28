@@ -16,19 +16,14 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-type t
-
-val zero : t
-val succ : t -> t
-val var : Depth_variable.t -> t
-val with_unroll_depth : t -> int -> t
-
-type descr = private {
-  offset : int;
-  var : Depth_variable.t option;
-  unroll_depth : int option;
-}
-
-val descr : t -> descr
+type t =
+  | Zero
+  | Var of Depth_variable.t
+  | Succ of t (* increase offset by 1; decrease unroll_depth by 1 if any *)
+  | Unroll_to of int * t
 
 val print : Format.formatter -> t -> unit
+
+val equal : t -> t -> bool (* for hashing [Simple]s *)
+
+val hash : t -> int (* for hashing [Simple]s *)

@@ -68,6 +68,8 @@ end = struct
   type t = {
     names_to_types :
       (Type_grammar.t * Binding_time.t * Name_mode.t) Name.Map.t;
+    depth_vars_to_rec_infos :
+      (Rec_info.t * Binding_time.t) Depth_variable.Map.t;
     aliases : Aliases.t;
     symbol_projections : Symbol_projection.t Variable.Map.t;
   }
@@ -119,11 +121,13 @@ end = struct
 
   let empty =
     { names_to_types = Name.Map.empty;
+      depth_vars_to_rec_infos = Depth_variable.Map.empty;
       aliases = Aliases.empty;
       symbol_projections = Variable.Map.empty;
     }
 
   let names_to_types t = t.names_to_types
+  let depth_vars_to_rec_infos t = t.depth_vars_to_rec_infos
   let aliases t = t.aliases
   let symbol_projections t = t.symbol_projections
 
@@ -135,9 +139,9 @@ end = struct
     let names_to_types =
       Name.Map.add name (ty, binding_time, name_mode) t.names_to_types
     in
-    { names_to_types;
+    { t with
+      names_to_types;
       aliases = new_aliases;
-      symbol_projections = t.symbol_projections;
     }
 
   let replace_variable_binding t var ty ~new_aliases =
@@ -147,9 +151,9 @@ end = struct
           ty, binding_time, name_mode)
         t.names_to_types
     in
-    { names_to_types;
+    { t with
+      names_to_types;
       aliases = new_aliases;
-      symbol_projections = t.symbol_projections;
     }
 
   let add_symbol_projection t var proj =
@@ -203,6 +207,11 @@ end = struct
         t1.names_to_types
         t2.names_to_types
     in
+    let depth_vars_to_rec_infos =
+      Depth_variable.Map.disjoint_union
+        t1.depth_vars_to_rec_infos
+        t2.depth_vars_to_rec_infos
+    in
     let aliases =
       Aliases.merge t1.aliases t2.aliases
     in
@@ -218,7 +227,7 @@ end = struct
         t1.symbol_projections
         t2.symbol_projections
     in
-    { names_to_types; aliases; symbol_projections; }
+    { names_to_types; depth_vars_to_rec_infos; aliases; symbol_projections; }
 end
 
 module One_level = struct
@@ -818,6 +827,21 @@ let add_variable_definition t var kind name_mode =
   with_current_level_and_next_binding_time t ~current_level
     (Binding_time.succ t.next_binding_time)
 
+let add_depth_variable_definition t dv =
+  let level =
+    Typing_env_level.add_depth_variable_definition
+      (One_level.level t.current_level) var kind t.next_binding_time
+  in
+  let just_after_level =
+    Cached.add_or_replace_depth_variable_binding (cached t) dv
+      t.next_binding_time
+  in
+  let current_level =
+    One_level.create (current_scope t) level ~just_after_level
+  in
+  with_current_level_and_next_binding_time t ~current_level
+    (Binding_time.succ t.next_binding_time)
+
 let add_symbol_definition t sym =
   (* CR mshinwell: check for redefinition when invariants enabled? *)
   let comp_unit = Symbol.compilation_unit sym in
@@ -1065,7 +1089,7 @@ and add_equation t name ty =
     Coercion.inverse coercion_from_bare_lhs_to_ty
   in
   let ty =
-    match Type_grammar.apply_coercion ty coercion_from_ty_to_bare_lhs with
+    match Type_grammar.apply_coercion ty t coercion_from_ty_to_bare_lhs with
     | Bottom -> Type_grammar.bottom (Type_grammar.kind ty)
     | Ok ty -> ty
   in

@@ -20,28 +20,27 @@ include Depth_expr0
 
 let print_with_cache ~cache:_ ppf t = print ppf t
 
-let all_ids_for_export { offset = _; var; unroll_depth = _ } =
-  match var with
-  | None -> Ids_for_export.empty
-  | Some var -> Ids_for_export.singleton_depth_variable var
+let rec all_ids_for_export = function
+  | Zero
+  | Var _ -> Ids_for_export.empty
+  | Succ t
+  | Unroll_to (_, t) -> all_ids_for_export t
 
-let import import_map { offset; var; unroll_depth } =
-  let var =
-    Option.map (Ids_for_export.Import_map.depth_variable import_map) var
-  in
-  { offset; var; unroll_depth }
+let rec free_names = function
+  | Zero -> Name_occurrences.empty
+  | Var v -> Name_occurrences.singleton_depth_variable v
+  | Succ t
+  | Unroll_to (_, t) -> free_names t
 
-let free_names { offset = _; var; unroll_depth = _ } =
-  match var with
-  | None -> Name_occurrences.empty
-  | Some var -> Name_occurrences.singleton_depth_variable var Name_mode.normal
+let rec apply_renaming t perm =
+  match t with
+  | Zero -> Zero
+  | Var v -> Var (Renaming.apply_depth_variable perm v)
+  | Succ t -> Succ (apply_renaming t perm)
+  | Unroll_to (d, t) -> Unroll_to (d, apply_renaming t perm)
 
-let apply_name_permutation { offset; var; unroll_depth } perm =
-  let var = Option.map (Name_permutation.apply_depth_variable perm) var in
-  { offset; var; unroll_depth }
-
-let invariant env { offset; var; unroll_depth } =
-  assert (offset >= 0);
-  Option.iter (fun unroll_depth -> assert (unroll_depth >= 0)) unroll_depth;
-  Option.iter (Invariant_env.check_depth_variable_is_bound env) var
-
+let rec invariant env = function
+  | Zero -> ()
+  | Var v -> Invariant_env.check_depth_variable_is_bound env v
+  | Succ t -> invariant env t
+  | Unroll_to (d, t) -> assert (d >= 0); invariant env t

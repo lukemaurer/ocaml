@@ -24,14 +24,16 @@ val is_obviously_id : t -> bool
 
 val inverse : t -> t
 
-val compose : t -> then_:t -> t option
-
-val compose_exn : t -> then_:t -> t
+val compose : t -> then_:t -> t
 
 val print : Format.formatter -> t -> unit
+
+val interpret
+   : t
+ -> change_depth:('a -> from:Depth_expr0.t -> to_:Depth_expr0.t -> 'a)
+ -> 'a
+ -> 'a
 
 val equal : t -> t -> bool
 
 val hash : t -> int
-
-val apply_to_depth : t -> Depth_expr0.t -> Depth_expr0.t option

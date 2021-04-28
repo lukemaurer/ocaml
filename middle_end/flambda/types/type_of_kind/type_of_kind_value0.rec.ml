@@ -156,7 +156,7 @@ let all_ids_for_export t =
   | String _ -> Ids_for_export.empty
   | Array { length; } -> T.all_ids_for_export length
 
-let apply_coercion t coercion : _ Or_bottom.t =
+let apply_coercion env t coercion : _ Or_bottom.t =
   match t with
   | Closures { by_closure_id; } ->
     Or_bottom.map
@@ -164,7 +164,7 @@ let apply_coercion t coercion : _ Or_bottom.t =
        map_function_decl_types
         by_closure_id
         ~f:(fun (decl : Function_declaration_type.t) : _ Or_bottom.t ->
-          Function_declaration_type.apply_coercion decl coercion))
+          Ok (Function_declaration_type.apply_coercion env decl coercion)))
       ~f:(fun by_closure_id -> Closures { by_closure_id; })
   | Variant _
   | Boxed_float _
@@ -173,7 +173,7 @@ let apply_coercion t coercion : _ Or_bottom.t =
   | Boxed_nativeint _
   | String _
   | Array _ ->
-    if Coercion.is_id coercion then Ok t
+    if Coercion.is_obviously_id coercion then Ok t
     else Bottom
 
 let eviscerate t : _ Or_unknown.t =

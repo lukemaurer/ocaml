@@ -37,5 +37,3 @@ val import : exported -> t
 
 val map_compilation_unit :
   (Compilation_unit.t -> Compilation_unit.t) -> exported -> exported
-
-val initialise : unit -> unit

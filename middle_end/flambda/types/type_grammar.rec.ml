@@ -158,35 +158,35 @@ let all_ids_for_export t =
   | Naked_int64 ty -> T_N64.all_ids_for_export ty
   | Naked_nativeint ty -> T_NN.all_ids_for_export ty
 
-let apply_coercion t coercion : _ Or_bottom.t =
+let apply_coercion t env coercion : _ Or_bottom.t =
   match t with
   | Value ty ->
-    begin match T_V.apply_coercion ty coercion with
+    begin match T_V.apply_coercion env ty coercion with
     | Ok ty -> Ok (Value ty)
     | Bottom -> Bottom
     end
   | Naked_immediate ty ->
-    begin match T_NI.apply_coercion ty coercion with
+    begin match T_NI.apply_coercion env ty coercion with
     | Ok ty -> Ok (Naked_immediate ty)
     | Bottom -> Bottom
     end
   | Naked_float ty ->
-    begin match T_Nf.apply_coercion ty coercion with
+    begin match T_Nf.apply_coercion env ty coercion with
     | Ok ty -> Ok (Naked_float ty)
     | Bottom -> Bottom
     end
   | Naked_int32 ty ->
-    begin match T_N32.apply_coercion ty coercion with
+    begin match T_N32.apply_coercion env ty coercion with
     | Ok ty -> Ok (Naked_int32 ty)
     | Bottom -> Bottom
     end
   | Naked_int64 ty ->
-    begin match T_N64.apply_coercion ty coercion with
+    begin match T_N64.apply_coercion env ty coercion with
     | Ok ty -> Ok (Naked_int64 ty)
     | Bottom -> Bottom
     end
   | Naked_nativeint ty ->
-    begin match T_NN.apply_coercion ty coercion with
+    begin match T_NN.apply_coercion env ty coercion with
     | Ok ty -> Ok (Naked_nativeint ty)
     | Bottom -> Bottom
     end

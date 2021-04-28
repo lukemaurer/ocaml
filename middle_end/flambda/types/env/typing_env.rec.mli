@@ -42,6 +42,8 @@ val increment_scope : t -> t
 
 val add_definition : t -> Name_in_binding_pos.t -> Flambda_kind.t -> t
 
+val add_depth_variable : t -> Depth_variable.t -> Rec_info.t -> t
+
 (** The caller is to ensure that the supplied type is the most precise
     available for the given name. *)
 val add_equation : t -> Name.t -> Type_grammar.t -> t
@@ -82,6 +84,8 @@ val variable_is_from_missing_cmx_file : t -> Name.t -> bool
 val mem : ?min_name_mode:Name_mode.t -> t -> Name.t -> bool
 
 val mem_simple : ?min_name_mode:Name_mode.t -> t -> Simple.t -> bool
+
+val find_depth_variable : t -> Depth_variable.t -> Rec_info.t
 
 (* CR mshinwell: clarify that this does not meet *)
 (* CR vlaviron: If the underlying level in the extension defines several

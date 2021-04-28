@@ -727,14 +727,14 @@ let add_closure_var t clos_var kind =
     closure_vars = For_closure_vars.add t.closure_vars clos_var kind;
   }
 
-let add_depth_variable t depth_variable kind =
+let add_depth_variable t depth_variable =
   { t with
     depth_variables =
-      For_depth_variables.add t.depth_variables depth_variable kind;
+      For_depth_variables.add t.depth_variables depth_variable Kind.normal;
   }
 
-let singleton_depth_variable depth_variable kind =
-  add_depth_variable empty depth_variable kind
+let singleton_depth_variable depth_variable =
+  add_depth_variable empty depth_variable
 
 let add_code_id t id kind =
   { t with

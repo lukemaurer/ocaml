@@ -19,10 +19,10 @@ module Const = Reg_width_things.Const
 type coercion_to_canonical = Coercion.t
 type map_to_canonical = coercion_to_canonical Name.Map.t
 
-let compose_map_values_exn map ~then_:coercion =
-  if Coercion.is_id coercion then map else
+let compose_map_values map ~then_:coercion =
+  if Coercion.is_obviously_id coercion then map else
     Name.Map.map (fun old_coercion ->
-      Coercion.compose_exn old_coercion ~then_:coercion
+      Coercion.compose old_coercion ~then_:coercion
     ) map
 
 let fatal_inconsistent ~func_name elt coercion1 coercion2 =
@@ -228,7 +228,7 @@ end = struct
 
   let compose { aliases; all; } ~then_ =
     let f m =
-      Name.Map.map (Coercion.compose_exn ~then_) m
+      compose_map_values m ~then_
     in
     let aliases = Name_mode.Map.map f aliases in
     let all = f all in
@@ -364,7 +364,7 @@ let print ppf { canonical_elements; aliases_of_canonical_names;
                         @[<hov 1>@<0>%s(coercion@ %a)@<0>%s@]\
                         )@]"
       Simple.print elt
-      (if Coercion.is_id coercion
+      (if Coercion.is_obviously_id coercion
       then Flambda_colours.elide ()
       else Flambda_colours.normal ())
       Coercion.print coercion
@@ -541,7 +541,7 @@ let get_aliases_of_canonical_element t ~canonical_element =
 let add_alias_between_canonical_elements t ~canonical_element
       ~coercion_to_canonical:coercion_to_canonical ~to_be_demoted =
   if Simple.equal canonical_element to_be_demoted then begin
-    if Coercion.is_id coercion_to_canonical then begin
+    if Coercion.is_obviously_id coercion_to_canonical then begin
       t
     end else
       Misc.fatal_errorf
@@ -572,7 +572,7 @@ let add_alias_between_canonical_elements t ~canonical_element
       t.canonical_elements
       |> Name.Map.fold (fun alias coercion_to_to_be_demoted canonical_elements ->
         let coercion_to_canonical =
-          Coercion.compose_exn coercion_to_to_be_demoted ~then_:coercion_to_canonical
+          Coercion.compose coercion_to_to_be_demoted ~then_:coercion_to_canonical
         in
         Name.Map.add alias (canonical_element, coercion_to_canonical) canonical_elements)
         (Aliases_of_canonical_element.all aliases_of_to_be_demoted)
@@ -748,7 +748,7 @@ let add_alias t ~element1 ~coercion_from_element2_to_element1 ~element2 =
           ~to_be_demoted:demoted_canonical
       in
       let coercion_from_demoted_alias_to_canonical =
-        Coercion.compose_exn
+        Coercion.compose
           coercion_from_demoted_alias_to_demoted_canonical
           ~then_:coercion_from_demoted_canonical_to_canonical
       in
@@ -787,7 +787,7 @@ let add_alias t ~element1 ~coercion_from_element2_to_element1 ~element2 =
        ~>
        canonical_element1 <--[c1 << c]-- canonical_element2 *)
     let coercion_from_canonical_element2_to_canonical_element1 =
-      Coercion.compose_exn coercion_from_element2_to_element1
+      Coercion.compose coercion_from_element2_to_element1
         ~then_:coercion_from_element1_to_canonical_element1
     in
     add ~canonical_element1 ~canonical_element2
@@ -810,7 +810,7 @@ let add_alias t ~element1 ~coercion_from_element2_to_element1 ~element2 =
          ~>
          canonical_element1 <--[c << c2^-1]-- canonical_element2
       *)
-      Coercion.compose_exn
+      Coercion.compose
         (Coercion.inverse coercion_from_element2_to_canonical_element2)
         ~then_:coercion_from_element2_to_element1
     in
@@ -836,9 +836,9 @@ let add_alias t ~element1 ~coercion_from_element2_to_element1 ~element2 =
          ~>
          canonical_element1 <--[c1 << c << c2^-1]-- canonical_element2
          *)
-      Coercion.compose_exn
+      Coercion.compose
         (Coercion.inverse coercion_from_element2_to_canonical_element2)
-        ~then_:(Coercion.compose_exn
+        ~then_:(Coercion.compose
           coercion_from_element2_to_element1
           ~then_:coercion_from_element1_to_canonical_element1)
     in
@@ -864,7 +864,7 @@ let add t ~element1:element1_with_coercion ~binding_time_and_mode1
   let element1 = element1_with_coercion |> Simple.without_coercion in
   let element2 = element2_with_coercion |> Simple.without_coercion in
   let coercion_from_element2_to_element1 =
-    Coercion.compose_exn (Simple.coercion element2_with_coercion)
+    Coercion.compose (Simple.coercion element2_with_coercion)
       ~then_:(Coercion.inverse (Simple.coercion element1_with_coercion))
   in
   if !Clflags.flambda_invariant_checks then begin
@@ -989,7 +989,7 @@ Format.eprintf "looking for canonical for %a, candidate canonical %a, min order 
           (Name.Map.min_binding at_earliest_mode)
       in
       let coercion_from_earliest_to_element =
-        Coercion.compose_exn coercion_from_earliest_to_canonical
+        Coercion.compose coercion_from_earliest_to_canonical
           ~then_:coercion_from_canonical_to_element
       in
       Simple.with_coercion (Simple.name earliest) coercion_from_earliest_to_element
@@ -1048,16 +1048,14 @@ let get_aliases t element =
     let coercion_from_canonical_to_element =
       Coercion.inverse coercion_from_element_to_canonical
     in
-    (* If any composition fails, then our coercions are inconsistent somehow,
-       which should only happen when meeting *)
     let names_with_coercions_to_element =
-      compose_map_values_exn names_with_coercions_to_canonical
+      compose_map_values names_with_coercions_to_canonical
         ~then_:coercion_from_canonical_to_element
     in
     
     if !Clflags.flambda_invariant_checks then begin
       let element_coerced_to_canonical =
-        Simple.apply_coercion_exn element coercion_from_element_to_canonical
+        Simple.apply_coercion element coercion_from_element_to_canonical
       in
       (* These aliases are all equivalent to the canonical element, and so is
          our original [element] if we coerce it first, so the coerced form of
@@ -1065,7 +1063,7 @@ let get_aliases t element =
       assert (Name.Map.exists 
         (fun name coercion_from_name_to_canonical ->
           let name_coerced_to_canonical =
-            Simple.apply_coercion_exn
+            Simple.apply_coercion
               (Simple.name name)
               coercion_from_name_to_canonical
           in
@@ -1190,7 +1188,7 @@ let get_canonical_ignoring_name_mode t name =
     elt
   | Alias_of_canonical { canonical_element; coercion_to_canonical } ->
     let coercion_from_canonical = Coercion.inverse coercion_to_canonical in
-    Simple.apply_coercion_exn canonical_element coercion_from_canonical
+    Simple.apply_coercion canonical_element coercion_from_canonical
 
 let clean_for_export
       { canonical_elements;

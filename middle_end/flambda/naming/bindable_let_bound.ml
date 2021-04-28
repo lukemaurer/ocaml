@@ -93,7 +93,7 @@ let apply_renaming t perm =
     else Singleton var'
   | Depth depth_var ->
     let depth_var' =
-      Bindable_depth_variable.apply_name_permutation depth_var perm
+      Bindable_depth_variable.apply_renaming depth_var perm
     in
     if depth_var == depth_var' then t
     else Depth depth_var'
@@ -145,7 +145,7 @@ let add_to_name_permutation t1 ~guaranteed_fresh:t2 perm =
       (Var_in_binding_pos.var var1)
       ~guaranteed_fresh:(Var_in_binding_pos.var var2)
   | Depth depth_var1, Depth depth_var2 ->
-    Name_permutation.add_fresh_depth_variable perm depth_var1
+    Renaming.add_fresh_depth_variable perm depth_var1
       ~guaranteed_fresh:depth_var2
   | Set_of_closures { name_mode = _; closure_vars = closure_vars1; },
       Set_of_closures { name_mode = _;

@@ -569,12 +569,12 @@ module Simple = struct
           ~name:(fun name -> Name.print ppf name)
           ~const:(fun cst -> Const.print ppf cst)
       in
-      match coercion t with
-      | Id -> print ppf t
-      | Non_id _ as coercion ->
+      if has_coercion t then
         Format.fprintf ppf "@[<hov 1>(coerce@ %a@ %a)@]"
           print t
-          Coercion.print coercion
+          Coercion.print (coercion t)
+      else
+        print ppf t
 
     let output chan t =
       print (Format.formatter_of_out_channel chan) t
@@ -587,7 +587,7 @@ module Simple = struct
   end
 
   let with_coercion t new_coercion =
-    if Coercion.is_id new_coercion then t
+    if Coercion.is_obviously_id new_coercion then t
     else
       match coercion t with
       | Id ->
