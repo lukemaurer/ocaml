@@ -200,7 +200,7 @@ Aliases of x/42: ((const ())
                     (z/44 (depth 2 -> 0))})
 Aliases of z/44: ((const ())
                   (names
-                   {(y/43 (depth 1 -> 2)) (x/42 (depth 2 -> 0))
+                   {(y/43 (depth 1 -> 2)) (x/42 (depth 0 -> 2))
                     (t/45 (depth 3 -> 2)) (z/44 id)})
 
 ((canonical_elements

@@ -238,26 +238,26 @@ end
 module Alias_set = struct
   type t = {
     const : Const.t option;
-    names : map_to_canonical;
+    names : Coercion.t Name.Map.t;
   }
 
   let empty = { const = None; names = Name.Map.empty; }
 
-  (** Create the set of aliases of some particular element (not seen here).
-      The given coercion points from that particular element to the canonical
-      element. *)
-  let create ~canonical_element ~coercion_from_element_to_canonical
-        ~alias_names_with_coercions_to_canonical =
+  let create_aliases_of_element
+        ~element:_
+        ~canonical_element
+        ~coercion_from_canonical_to_element
+        ~alias_names_with_coercions_to_element =
     Simple.pattern_match canonical_element
       ~const:(fun canonical_const ->
         let const = Some canonical_const in
-        let names = alias_names_with_coercions_to_canonical in
+        let names = alias_names_with_coercions_to_element in
         { const; names })
       ~name:(fun canonical_name ->
         let const = None in
         let names =
-          Name.Map.add canonical_name coercion_from_element_to_canonical
-            alias_names_with_coercions_to_canonical
+          Name.Map.add canonical_name coercion_from_canonical_to_element
+            alias_names_with_coercions_to_element
         in
         { const; names })
 
@@ -1010,11 +1010,15 @@ let get_aliases t element =
       Aliases_of_canonical_element.all
         (get_aliases_of_canonical_element t ~canonical_element)
     in
-    let coercion_from_element_to_canonical = Coercion.id in
-    Alias_set.create
+    let coercion_from_canonical_to_element = Coercion.id in
+    let alias_names_with_coercions_to_element =
+      alias_names_with_coercions_to_canonical
+    in
+    Alias_set.create_aliases_of_element
+      ~element
       ~canonical_element
-      ~coercion_from_element_to_canonical
-      ~alias_names_with_coercions_to_canonical
+      ~coercion_from_canonical_to_element
+      ~alias_names_with_coercions_to_element
   | Alias_of_canonical { canonical_element;
       coercion_to_canonical = coercion_from_element_to_canonical; } ->
     if !Clflags.flambda_invariant_checks then begin
@@ -1051,14 +1055,11 @@ let get_aliases t element =
           Simple.equal element_coerced_to_canonical name_coerced_to_canonical
         ) alias_names_with_coercions_to_canonical)
     end;
-    (* CR lmaurer: FIXME I seem to have discovered a bug during rebasing.
-       Leaving this here to replicate the bug rather than try to fix a bug
-       while rebasing. *)
-    let alias_names_with_coercions_to_canonical = alias_names_with_coercions_to_element in
-    Alias_set.create
+    Alias_set.create_aliases_of_element
+      ~element
       ~canonical_element
-      ~coercion_from_element_to_canonical
-      ~alias_names_with_coercions_to_canonical
+      ~coercion_from_canonical_to_element
+      ~alias_names_with_coercions_to_element
 
 let all_ids_for_export { canonical_elements = _;
                          aliases_of_canonical_names = _;
