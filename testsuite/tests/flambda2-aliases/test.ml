@@ -606,14 +606,17 @@ let () = test "three aliases (one inverse) /w modes" ~f:(fun ppf ->
        (pp_opt_or_none Simple.print)
          (get_canonical aliases simple mode ~min_name_mode:Name_mode.normal)
   in
+  let show_aliases simple =
+    Format.fprintf ppf "@.Aliases of %a: %a"
+      Simple.print simple
+      Aliases.Alias_set.print (Aliases.get_aliases aliases simple)
+  in
   show_canonicals x v_x Name_mode.in_types;
   show_canonicals y v_y Name_mode.in_types;
   show_canonicals z v_z Name_mode.phantom;
   show_canonicals t v_t Name_mode.normal;
-  Format.fprintf ppf "@.Aliases of %a: %a@.@.%a"
-    Simple.print z
-    Aliases.Alias_set.print (Aliases.get_aliases aliases x)
-    Aliases.print aliases)
-
+  show_aliases x;
+  show_aliases z;
+  Format.fprintf ppf "@.@.%a" Aliases.print aliases)
 
 let () = print_endline "OK."

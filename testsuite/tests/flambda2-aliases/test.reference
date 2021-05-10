@@ -194,10 +194,14 @@ Canonical for t/45: (coerce x/42 (depth 0 -> 3))
 ...           >= In_types: (coerce x/42 (depth 0 -> 3))
 ...           >= Normal: t/45
 
-Aliases of z/44: ((const ())
+Aliases of x/42: ((const ())
                   (names
                    {(y/43 (depth 1 -> 0)) (x/42 id) (t/45 (depth 3 -> 0))
                     (z/44 (depth 2 -> 0))})
+Aliases of z/44: ((const ())
+                  (names
+                   {(y/43 (depth 1 -> 2)) (x/42 (depth 2 -> 0))
+                    (t/45 (depth 3 -> 2)) (z/44 id)})
 
 ((canonical_elements
   {(y/43 (x/42 (coercion (depth 1 -> 0))))
