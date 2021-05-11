@@ -109,6 +109,8 @@ module Typing_env : sig
 
   val find_symbol_projection : t -> Variable.t -> Symbol_projection.t option
 
+  val add_depth_variable : t -> Depth_variable.t -> Rec_info_expr.t -> t
+
   val add_equation : t -> Name.t -> flambda_type -> t
 
   val add_equations_on_params

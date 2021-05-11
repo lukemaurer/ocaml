@@ -59,6 +59,12 @@ module Cached : sig
 
   val symbol_projections : t -> Symbol_projection.t Variable.Map.t
 
+  val add_depth_variable
+     : t -> Depth_variable.t -> Rec_info_expr.t -> Binding_time.t -> t
+
+  val depth_variables
+     : t -> (Rec_info_expr.t * Binding_time.t) Depth_variable.Map.t
+
   val clean_for_export : t -> reachable_names:Name_occurrences.t -> t
 
   val apply_renaming : t -> Renaming.t -> t
@@ -70,6 +76,7 @@ end = struct
       (Type_grammar.t * Binding_time.t * Name_mode.t) Name.Map.t;
     aliases : Aliases.t;
     symbol_projections : Symbol_projection.t Variable.Map.t;
+    depth_variables : (Rec_info_expr.t * Binding_time.t) Depth_variable.Map.t;
   }
 
   let print_kind_and_mode ~min_binding_time ppf (ty, binding_time, mode) =
@@ -121,11 +128,13 @@ end = struct
     { names_to_types = Name.Map.empty;
       aliases = Aliases.empty;
       symbol_projections = Variable.Map.empty;
+      depth_variables = Depth_variable.Map.empty;
     }
 
   let names_to_types t = t.names_to_types
   let aliases t = t.aliases
   let symbol_projections t = t.symbol_projections
+  let depth_variables t = t.depth_variables
 
   (* CR mshinwell: At least before the following two functions were split
      (used to be add-or-replace), the [names_to_types] map addition was a
@@ -138,6 +147,7 @@ end = struct
     { names_to_types;
       aliases = new_aliases;
       symbol_projections = t.symbol_projections;
+      depth_variables = t.depth_variables;
     }
 
   let replace_variable_binding t var ty ~new_aliases =
@@ -150,6 +160,7 @@ end = struct
     { names_to_types;
       aliases = new_aliases;
       symbol_projections = t.symbol_projections;
+      depth_variables = t.depth_variables;
     }
 
   let add_symbol_projection t var proj =
@@ -160,6 +171,13 @@ end = struct
     match Variable.Map.find var t.symbol_projections with
     | exception Not_found -> None
     | proj -> Some proj
+
+  let add_depth_variable t dv rec_info binding_time =
+    let depth_variables =
+      Depth_variable.Map.add dv (rec_info, binding_time)
+        t.depth_variables
+    in
+    { t with depth_variables; }
 
   let clean_for_export t ~reachable_names =
     (* Names coming from other compilation units or unreachable are removed *)
@@ -177,7 +195,8 @@ end = struct
       aliases;
     }
 
-  let apply_renaming { names_to_types; aliases; symbol_projections; } renaming =
+  let apply_renaming { names_to_types; aliases; symbol_projections;
+                       depth_variables; } renaming =
     let names_to_types =
       Name.Map.fold (fun name (ty, binding_time, mode) acc ->
           Name.Map.add (Renaming.apply_name renaming name)
@@ -195,7 +214,15 @@ end = struct
         symbol_projections
         Variable.Map.empty
     in
-    { names_to_types; aliases; symbol_projections; }
+    let depth_variables =
+      Depth_variable.Map.fold (fun dv rec_info_with_binding_time_and_mode acc ->
+          Depth_variable.Map.add (Renaming.apply_depth_variable renaming dv)
+            rec_info_with_binding_time_and_mode
+            acc)
+        depth_variables
+        Depth_variable.Map.empty
+    in
+    { names_to_types; aliases; symbol_projections; depth_variables; }
 
   let merge t1 t2 =
     let names_to_types =
@@ -218,7 +245,12 @@ end = struct
         t1.symbol_projections
         t2.symbol_projections
     in
-    { names_to_types; aliases; symbol_projections; }
+    let depth_variables =
+      Depth_variable.Map.disjoint_union
+        t1.depth_variables
+        t2.depth_variables
+    in
+    { names_to_types; aliases; symbol_projections; depth_variables; }
 end
 
 module One_level = struct
@@ -732,33 +764,40 @@ let binding_time_and_mode_of_simple t simple =
         Binding_time.consts_and_discriminants Name_mode.normal)
     ~name:(fun name ~coercion:_ -> binding_time_and_mode t name)
 
+let mem_by ?min_name_mode t name ~find ~in_imported_names =
+  let name_mode =
+    match find name t with
+    | exception Not_found ->
+      if in_imported_names name t
+      then Some Name_mode.in_types
+      else None
+    | _ty, binding_time, name_mode ->
+      let scoped_name_mode =
+        Binding_time.With_name_mode.scoped_name_mode
+          (Binding_time.With_name_mode.create binding_time name_mode)
+          ~min_binding_time:t.min_binding_time
+      in
+      Some scoped_name_mode
+  in
+  match name_mode, min_name_mode with
+  | None, _ -> false
+  | Some _, None -> true
+  | Some name_mode, Some min_name_mode ->
+    begin match
+      Name_mode.compare_partial_order min_name_mode name_mode
+    with
+    | None -> false
+    | Some c -> c <= 0
+    end
+
 let mem ?min_name_mode t name =
   Name.pattern_match name
     ~var:(fun _var ->
-      let name_mode =
-        match Name.Map.find name (names_to_types t) with
-        | exception Not_found ->
-          if Name.Set.mem name (t.get_imported_names ())
-          then Some Name_mode.in_types
-          else None
-        | _ty, binding_time, name_mode ->
-          let scoped_name_mode =
-            Binding_time.With_name_mode.scoped_name_mode
-              (Binding_time.With_name_mode.create binding_time name_mode)
-              ~min_binding_time:t.min_binding_time
-          in
-          Some scoped_name_mode
-      in
-      match name_mode, min_name_mode with
-      | None, _ -> false
-      | Some _, None -> true
-      | Some name_mode, Some min_name_mode ->
-        begin match
-          Name_mode.compare_partial_order min_name_mode name_mode
-        with
-        | None -> false
-        | Some c -> c <= 0
-        end)
+      mem_by ?min_name_mode t name
+        ~find:(fun name t -> Name.Map.find name (names_to_types t))
+        ~in_imported_names:(fun name t ->
+          Name.Set.mem name (t.get_imported_names ())
+        ))
     ~symbol:(fun sym ->
       (* CR mshinwell: This might not take account of symbols in missing
          .cmx files *)
@@ -853,6 +892,33 @@ let add_symbol_projection t var proj =
 
 let find_symbol_projection t var =
   Cached.find_symbol_projection (cached t) var
+
+let depth_variables t =
+  Cached.depth_variables (One_level.just_after_level t.current_level)
+
+let add_depth_variable t dv rec_info =
+  let level =
+    Typing_env_level.add_depth_variable (One_level.level t.current_level)
+      dv rec_info
+  in
+  let binding_time = t.next_binding_time in
+  let current_level =
+    let just_after_level =
+      Cached.add_depth_variable (cached t) dv rec_info binding_time
+    in
+    One_level.create (current_scope t) level ~just_after_level
+  in
+  with_current_level_and_next_binding_time t ~current_level
+    (Binding_time.succ t.next_binding_time)
+
+let mem_depth_variable ?min_name_mode t dv =
+  mem_by ?min_name_mode t dv
+    ~find:(fun dv t ->
+        let value, binding_time =
+          Depth_variable.Map.find dv (depth_variables t)
+        in
+        value, binding_time, Name_mode.normal)
+    ~in_imported_names:(fun _ _ -> false)
 
 let add_definition t (name : Name_in_binding_pos.t) kind =
   let name_mode = Name_in_binding_pos.name_mode name in

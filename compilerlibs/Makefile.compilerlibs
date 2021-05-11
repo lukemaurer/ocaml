@@ -258,6 +258,7 @@ MIDDLE_END_FLAMBDA_NAMING=\
   middle_end/flambda/naming/bindable_variable_in_terms.cmo
 
 MIDDLE_END_FLAMBDA_TYPES=\
+  middle_end/flambda/terms/rec_info_expr.cmo \
   middle_end/flambda/types/basic/var_within_closure_set.cmo \
   middle_end/flambda/types/kinds/flambda_arity.cmo \
   middle_end/flambda/types/env/binding_time.cmo \
@@ -294,7 +295,6 @@ MIDDLE_END_FLAMBDA_TERMS=\
   middle_end/flambda/terms/set_of_closures.cmo \
   middle_end/flambda/inlining/metrics/code_size.cmo \
   middle_end/flambda/inlining/metrics/removed_operations.cmo \
-  middle_end/flambda/terms/rec_info_expr.cmo \
   middle_end/flambda/terms/flambda.cmo \
   middle_end/flambda/terms/flambda_unit.cmo
 

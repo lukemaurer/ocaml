@@ -21,6 +21,7 @@ type t = {
   binding_times : Variable.Set.t Binding_time.Map.t;
   equations : Type_grammar.t Name.Map.t;
   symbol_projections : Symbol_projection.t Variable.Map.t;
+  depth_variables : Rec_info_expr.t Depth_variable.Map.t
 }
 
 (* let defined_vars t = t.defined_vars *)
@@ -39,9 +40,11 @@ let defines_name_but_no_equations t name =
 
 let print_with_cache ~cache ppf
       { defined_vars; binding_times = _; equations;
-        symbol_projections = _; } =
+        symbol_projections = _;
+        depth_variables = _ } =
   (* CR mshinwell: print symbol projections along with tidying up this
      function *)
+  (* CR lmaurer: Also print depth variables *)
   let print_equations ppf equations =
     let equations = Name.Map.bindings equations in
     match equations with
@@ -92,15 +95,17 @@ let empty () =
     binding_times = Binding_time.Map.empty;
     equations = Name.Map.empty;
     symbol_projections = Variable.Map.empty;
+    depth_variables = Depth_variable.Map.empty;
   }
 
 let is_empty
       { defined_vars; binding_times; equations;
-        symbol_projections; } =
+        symbol_projections; depth_variables; } =
   Variable.Map.is_empty defined_vars
     && Binding_time.Map.is_empty binding_times
     && Name.Map.is_empty equations
     && Variable.Map.is_empty symbol_projections
+    && Depth_variable.Map.is_empty depth_variables
 
 let equations t = t.equations
 
@@ -111,6 +116,12 @@ let add_symbol_projection t var proj =
     Variable.Map.add var proj t.symbol_projections
   in
   { t with symbol_projections; }
+
+let add_depth_variable t dv rec_info_expr =
+  let depth_variables =
+    Depth_variable.Map.add dv rec_info_expr t.depth_variables
+  in
+  { t with depth_variables; }
 
 let add_definition t var kind binding_time =
   if !Clflags.flambda_invariant_checks
@@ -180,10 +191,16 @@ let concat (t1 : t) (t2 : t) =
       t1.symbol_projections
       t2.symbol_projections
   in
+  let depth_variables =
+    Depth_variable.Map.union (fun _var _rec_info1 rec_info2 -> Some rec_info2)
+      t1.depth_variables
+      t2.depth_variables
+  in
   { defined_vars;
     binding_times;
     equations;
     symbol_projections;
+    depth_variables;
   }
 
 let join_types ~params ~env_at_fork envs_with_levels =
@@ -445,10 +462,28 @@ let construct_joined_level envs_with_levels ~env_at_fork ~allowed
       Variable.Map.empty
       envs_with_levels
   in
+  let depth_variables =
+    List.fold_left (fun depth_variables (_env_at_use, _id, _use_kind, t) ->
+        let dvs_this_level =
+          Depth_variable.Map.filter (fun dv _ ->
+              Typing_env.mem_depth_variable ~min_name_mode:Name_mode.normal
+                env_at_fork dv
+                  || Name_occurrences.mem_depth_variable allowed dv)
+            t.depth_variables
+        in
+        Depth_variable.Map.union (fun _dv rec_info1 rec_info2 ->
+            if Rec_info_expr.equal rec_info1 rec_info2 then Some rec_info1
+            else None)
+          depth_variables
+          dvs_this_level)
+      Depth_variable.Map.empty
+      envs_with_levels
+  in
   { defined_vars;
     binding_times;
     equations;
     symbol_projections;
+    depth_variables;
   }
 
 let check_join_inputs ~env_at_fork _envs_with_levels ~params

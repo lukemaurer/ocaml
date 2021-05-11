@@ -56,6 +56,12 @@ val add_symbol_projection : t -> Variable.t -> Symbol_projection.t -> t
 
 val find_symbol_projection : t -> Variable.t -> Symbol_projection.t option
 
+val add_depth_variable
+   : t
+  -> Depth_variable.t
+  -> Rec_info_expr.t
+  -> t
+
 val add_equations_on_params
    : t
   -> params:Kinded_parameter.t list
@@ -82,6 +88,9 @@ val variable_is_from_missing_cmx_file : t -> Name.t -> bool
 val mem : ?min_name_mode:Name_mode.t -> t -> Name.t -> bool
 
 val mem_simple : ?min_name_mode:Name_mode.t -> t -> Simple.t -> bool
+
+val mem_depth_variable
+   : ?min_name_mode:Name_mode.t -> t -> Depth_variable.t -> bool
 
 (* CR mshinwell: clarify that this does not meet *)
 (* CR vlaviron: If the underlying level in the extension defines several
