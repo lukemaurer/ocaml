@@ -140,6 +140,13 @@ module Typing_env : sig
 
   val find_params : t -> Kinded_parameter.t list -> flambda_type list
 
+  val find_depth_variable : t -> Depth_variable.t -> Rec_info_expr.t
+
+  val find_depth_variable_or_missing
+    : t
+    -> Depth_variable.t
+    -> Rec_info_expr.t option
+
   val add_env_extension : t -> Typing_env_extension.t -> t
 
   val add_env_extension_with_extra_variables

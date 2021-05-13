@@ -923,6 +923,17 @@ let mem_depth_variable ?min_name_mode t dv =
     ~find:(fun dv t -> Depth_variable.Map.find dv (depth_variables t))
     ~in_imported_names:(fun _ _ -> false)
 
+let find_depth_variable t dv =
+  let value, _binding_time, _name_mode =
+    Depth_variable.Map.find dv (depth_variables t)
+  in
+  value
+
+let find_depth_variable_or_missing t dv =
+  match find_depth_variable t dv with
+  | exception Not_found -> None
+  | value -> Some value
+
 let add_definition t (name : Name_in_binding_pos.t) kind =
   let name_mode = Name_in_binding_pos.name_mode name in
   Name.pattern_match (Name_in_binding_pos.name name)

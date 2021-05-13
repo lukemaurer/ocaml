@@ -84,6 +84,13 @@ val find_or_missing : t -> Name.t -> Type_grammar.t option
 
 val find_params : t -> Kinded_parameter.t list -> Type_grammar.t list
 
+val find_depth_variable : t -> Depth_variable.t -> Rec_info_expr.t
+
+val find_depth_variable_or_missing
+   : t
+  -> Depth_variable.t
+  -> Rec_info_expr.t option
+
 val variable_is_from_missing_cmx_file : t -> Name.t -> bool
 
 val mem : ?min_name_mode:Name_mode.t -> t -> Name.t -> bool
