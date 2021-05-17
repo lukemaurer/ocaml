@@ -60,10 +60,16 @@ module Cached : sig
   val symbol_projections : t -> Symbol_projection.t Variable.Map.t
 
   val add_depth_variable
-     : t -> Depth_variable.t -> Rec_info_expr.t -> Binding_time.t -> t
+     : t
+    -> Depth_variable.t
+    -> Rec_info_expr.t
+    -> Binding_time.t
+    -> Name_mode.t
+    -> t
 
   val depth_variables
-     : t -> (Rec_info_expr.t * Binding_time.t) Depth_variable.Map.t
+     : t
+    -> (Rec_info_expr.t * Binding_time.t * Name_mode.t) Depth_variable.Map.t
 
   val clean_for_export : t -> reachable_names:Name_occurrences.t -> t
 
@@ -76,7 +82,8 @@ end = struct
       (Type_grammar.t * Binding_time.t * Name_mode.t) Name.Map.t;
     aliases : Aliases.t;
     symbol_projections : Symbol_projection.t Variable.Map.t;
-    depth_variables : (Rec_info_expr.t * Binding_time.t) Depth_variable.Map.t;
+    depth_variables :
+      (Rec_info_expr.t * Binding_time.t * Name_mode.t) Depth_variable.Map.t;
   }
 
   let print_kind_and_mode ~min_binding_time ppf (ty, binding_time, mode) =
@@ -172,9 +179,9 @@ end = struct
     | exception Not_found -> None
     | proj -> Some proj
 
-  let add_depth_variable t dv rec_info binding_time =
+  let add_depth_variable t dv rec_info binding_time name_mode =
     let depth_variables =
-      Depth_variable.Map.add dv (rec_info, binding_time)
+      Depth_variable.Map.add dv (rec_info, binding_time, name_mode)
         t.depth_variables
     in
     { t with depth_variables; }
@@ -764,7 +771,7 @@ let binding_time_and_mode_of_simple t simple =
         Binding_time.consts_and_discriminants Name_mode.normal)
     ~name:(fun name ~coercion:_ -> binding_time_and_mode t name)
 
-let mem_by ?min_name_mode t name ~find ~in_imported_names =
+let [@inline always] mem_by ?min_name_mode t name ~find ~in_imported_names =
   let name_mode =
     match find name t with
     | exception Not_found ->
@@ -896,7 +903,7 @@ let find_symbol_projection t var =
 let depth_variables t =
   Cached.depth_variables (One_level.just_after_level t.current_level)
 
-let add_depth_variable t dv rec_info =
+let add_depth_variable t dv rec_info ~name_mode =
   let level =
     Typing_env_level.add_depth_variable (One_level.level t.current_level)
       dv rec_info
@@ -904,7 +911,7 @@ let add_depth_variable t dv rec_info =
   let binding_time = t.next_binding_time in
   let current_level =
     let just_after_level =
-      Cached.add_depth_variable (cached t) dv rec_info binding_time
+      Cached.add_depth_variable (cached t) dv rec_info binding_time name_mode
     in
     One_level.create (current_scope t) level ~just_after_level
   in
@@ -913,11 +920,7 @@ let add_depth_variable t dv rec_info =
 
 let mem_depth_variable ?min_name_mode t dv =
   mem_by ?min_name_mode t dv
-    ~find:(fun dv t ->
-        let value, binding_time =
-          Depth_variable.Map.find dv (depth_variables t)
-        in
-        value, binding_time, Name_mode.normal)
+    ~find:(fun dv t -> Depth_variable.Map.find dv (depth_variables t))
     ~in_imported_names:(fun _ _ -> false)
 
 let add_definition t (name : Name_in_binding_pos.t) kind =

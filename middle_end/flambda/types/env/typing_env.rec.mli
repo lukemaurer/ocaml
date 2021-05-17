@@ -60,6 +60,7 @@ val add_depth_variable
    : t
   -> Depth_variable.t
   -> Rec_info_expr.t
+  -> name_mode:Name_mode.t
   -> t
 
 val add_equations_on_params
