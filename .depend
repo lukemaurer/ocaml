@@ -4457,6 +4457,11 @@ middle_end/flambda/basic/or_deleted.cmo : \
 middle_end/flambda/basic/or_deleted.cmx : \
     middle_end/flambda/basic/or_deleted.cmi
 middle_end/flambda/basic/or_deleted.cmi :
+middle_end/flambda/basic/or_infinity.cmo : \
+    middle_end/flambda/basic/or_infinity.cmi
+middle_end/flambda/basic/or_infinity.cmx : \
+    middle_end/flambda/basic/or_infinity.cmi
+middle_end/flambda/basic/or_infinity.cmi :
 middle_end/flambda/basic/or_variable.cmo : \
     middle_end/flambda/compilenv_deps/variable.cmi \
     middle_end/flambda/naming/renaming.cmi \
@@ -8565,17 +8570,26 @@ middle_end/flambda/terms/non_recursive_let_cont_handler.rec.cmi : \
     middle_end/flambda/cmx/contains_ids.cmo
 middle_end/flambda/terms/rec_info_expr.cmo : \
     middle_end/flambda/naming/renaming.cmi \
+    middle_end/flambda/basic/or_infinity.cmi \
+    utils/numbers.cmi \
     middle_end/flambda/naming/name_occurrences.cmi \
+    utils/misc.cmi \
     middle_end/flambda/cmx/ids_for_export.cmi \
+    middle_end/flambda/compilenv_deps/flambda_colours.cmi \
     middle_end/flambda/compilenv_deps/depth_variable.cmi \
     middle_end/flambda/terms/rec_info_expr.cmi
 middle_end/flambda/terms/rec_info_expr.cmx : \
     middle_end/flambda/naming/renaming.cmx \
+    middle_end/flambda/basic/or_infinity.cmx \
+    utils/numbers.cmx \
     middle_end/flambda/naming/name_occurrences.cmx \
+    utils/misc.cmx \
     middle_end/flambda/cmx/ids_for_export.cmx \
+    middle_end/flambda/compilenv_deps/flambda_colours.cmx \
     middle_end/flambda/compilenv_deps/depth_variable.cmx \
     middle_end/flambda/terms/rec_info_expr.cmi
 middle_end/flambda/terms/rec_info_expr.cmi : \
+    middle_end/flambda/basic/or_infinity.cmi \
     middle_end/flambda/basic/expr_std.cmo \
     middle_end/flambda/compilenv_deps/depth_variable.cmi \
     middle_end/flambda/cmx/contains_ids.cmo
