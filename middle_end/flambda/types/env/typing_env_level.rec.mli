@@ -58,7 +58,13 @@ val add_symbol_projection : t -> Variable.t -> Symbol_projection.t -> t
 
 val symbol_projections : t -> Symbol_projection.t Variable.Map.t
 
-val add_depth_variable : t -> Depth_variable.t -> Rec_info_expr.t -> t
+val add_depth_var_definition : t -> Depth_variable.t -> t
+
+val add_or_replace_depth_var_equation
+   : t
+  -> Depth_variable.t
+  -> Rec_info_expr.t
+  -> t
 
 val concat : t -> t -> t
 

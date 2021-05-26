@@ -38,9 +38,12 @@ val succ : t -> t
 val unroll_to : int -> t -> t
 
 val is_obviously_initial : t -> bool
+val is_obviously_unknown : t -> bool
 
 val equal : t -> t -> bool
 
 include Expr_std.S with type t := t
 
 include Contains_ids.S with type t := t
+
+val simplify : t -> find_var:(Depth_variable.t -> t option) -> t
