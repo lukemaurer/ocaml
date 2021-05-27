@@ -5552,9 +5552,7 @@ middle_end/flambda/naming/bindable_let_bound.cmo : \
     utils/misc.cmi \
     middle_end/flambda/cmx/ids_for_export.cmi \
     utils/identifiable.cmi \
-    middle_end/flambda/compilenv_deps/depth_variable.cmi \
     middle_end/flambda/terms/bound_symbols.cmi \
-    middle_end/flambda/naming/bindable_depth_variable.cmi \
     middle_end/flambda/naming/bindable_let_bound.cmi
 middle_end/flambda/naming/bindable_let_bound.cmx : \
     middle_end/flambda/compilenv_deps/variable.cmx \
@@ -5566,19 +5564,15 @@ middle_end/flambda/naming/bindable_let_bound.cmx : \
     utils/misc.cmx \
     middle_end/flambda/cmx/ids_for_export.cmx \
     utils/identifiable.cmx \
-    middle_end/flambda/compilenv_deps/depth_variable.cmx \
     middle_end/flambda/terms/bound_symbols.cmx \
-    middle_end/flambda/naming/bindable_depth_variable.cmx \
     middle_end/flambda/naming/bindable_let_bound.cmi
 middle_end/flambda/naming/bindable_let_bound.cmi : \
     middle_end/flambda/compilenv_deps/variable.cmi \
     middle_end/flambda/naming/var_in_binding_pos.cmi \
     middle_end/flambda/basic/symbol_scoping_rule.cmi \
     middle_end/flambda/naming/name_mode.cmi \
-    middle_end/flambda/compilenv_deps/depth_variable.cmi \
     middle_end/flambda/cmx/contains_ids.cmo \
     middle_end/flambda/terms/bound_symbols.cmi \
-    middle_end/flambda/naming/bindable_depth_variable.cmi \
     middle_end/flambda/naming/bindable.cmo
 middle_end/flambda/naming/bindable_variable_in_terms.cmo : \
     middle_end/flambda/compilenv_deps/variable.cmi \
@@ -10301,6 +10295,7 @@ middle_end/flambda/unboxing/optimistic_unboxing_decision.cmo : \
     middle_end/flambda/naming/name_in_binding_pos.cmi \
     middle_end/flambda/basic/name.cmi \
     utils/misc.cmi \
+    utils/clflags.cmi \
     middle_end/flambda/unboxing/optimistic_unboxing_decision.cmi
 middle_end/flambda/unboxing/optimistic_unboxing_decision.cmx : \
     middle_end/flambda/basic/var_within_closure.cmx \
@@ -10315,6 +10310,7 @@ middle_end/flambda/unboxing/optimistic_unboxing_decision.cmx : \
     middle_end/flambda/naming/name_in_binding_pos.cmx \
     middle_end/flambda/basic/name.cmx \
     utils/misc.cmx \
+    utils/clflags.cmx \
     middle_end/flambda/unboxing/optimistic_unboxing_decision.cmi
 middle_end/flambda/unboxing/optimistic_unboxing_decision.cmi : \
     middle_end/flambda/unboxing/unboxing_types.cmi \

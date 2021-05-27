@@ -495,8 +495,6 @@ and let_expr env le =
       Misc.fatal_error "TODO: dominator-scoped symbols"
     | Symbols { bound_symbols; scoping_rule = Syntactic } ->
       static_let_expr env bound_symbols defining_expr body
-    | Depth _dv ->
-      Misc.fatal_error "TODO: depth variables"
   )
 and dynamic_let_expr env vars (defining_expr : Flambda.Named.t) body
       : Fexpr.expr =
