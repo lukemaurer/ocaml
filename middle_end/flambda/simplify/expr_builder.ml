@@ -91,6 +91,11 @@ let create_let uacc (bound_vars : BLB.t) defining_expr
       end;
       bound_vars, Some Name_mode.normal, Nothing_deleted_at_runtime
     end else begin
+      let is_depth =
+        match (defining_expr : Named.t) with
+        | Rec_info _ -> true
+        | Simple _ | Prim _ | Set_of_closures _ | Static_consts _ -> false
+      in
       let has_uses = Name_mode.Or_absent.is_present greatest_name_mode in
       let user_visible =
         BLB.exists_all_bound_vars bound_vars ~f:(fun bound_var ->
@@ -101,7 +106,7 @@ let create_let uacc (bound_vars : BLB.t) defining_expr
            provenance info associated with the variable.  If there isn't, the
            [Let] can be deleted even if debugging information is being
            generated. *)
-        not (has_uses || (generate_phantom_lets && user_visible))
+        is_depth || not (has_uses || (generate_phantom_lets && user_visible))
       in
       if will_delete_binding then begin
         bound_vars, None, Defining_expr_deleted_at_runtime

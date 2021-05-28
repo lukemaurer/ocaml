@@ -44,3 +44,5 @@ val equal : t -> t -> bool
 include Expr_std.S with type t := t
 
 include Contains_ids.S with type t := t
+
+val simplify : t -> find_var:(Depth_variable.t -> t option) -> t

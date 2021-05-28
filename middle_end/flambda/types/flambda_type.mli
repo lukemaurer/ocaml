@@ -667,6 +667,11 @@ val prove_project_var_simple
   -> Var_within_closure.t
   -> Simple.t proof
 
+val prove_rec_info
+   : Typing_env.t
+  -> t
+  -> Rec_info_expr.t proof
+
 type var_or_symbol_or_tagged_immediate = private
   | Var of Variable.t
   | Symbol of Symbol.t

@@ -946,6 +946,17 @@ let prove_project_var_simple env ~min_name_mode t env_var : Simple.t proof =
   | Naked_immediate _ | Naked_float _ | Naked_int32 _ | Naked_int64 _
   | Naked_nativeint _ | Rec_info _ -> wrong_kind ()
 
+let prove_rec_info env t : Rec_info_expr.t proof =
+  let wrong_kind () =
+    Misc.fatal_errorf "Kind error: expected [Rec_info]:@ %a" print t
+  in
+  match expand_head t env with
+  | Rec_info (Ok rec_info_expr) -> Proved rec_info_expr
+  | Rec_info Unknown -> Unknown
+  | Rec_info Bottom -> Invalid
+  | Const _ | Value _ | Naked_immediate _ | Naked_float _ | Naked_int32 _
+  | Naked_int64 _ | Naked_nativeint _ -> wrong_kind ()
+
 type to_lift =
   | Immutable_block of
       { tag : Tag.Scannable.t;
