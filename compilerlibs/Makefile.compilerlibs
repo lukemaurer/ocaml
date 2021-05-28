@@ -266,6 +266,7 @@ MIDDLE_END_FLAMBDA_TYPES=\
   middle_end/flambda/types/basic/or_bottom.cmo \
   middle_end/flambda/types/basic/string_info.cmo \
   middle_end/flambda/types/basic/or_unknown_or_bottom.cmo \
+  middle_end/flambda/terms/rec_info_expr.cmo \
   middle_end/flambda/types/structures/code_age_relation.cmo \
   middle_end/flambda/types/structures/type_structure_intf.cmo \
   middle_end/flambda/types/structures/product_intf.cmo \
@@ -294,7 +295,6 @@ MIDDLE_END_FLAMBDA_TERMS=\
   middle_end/flambda/terms/set_of_closures.cmo \
   middle_end/flambda/inlining/metrics/code_size.cmo \
   middle_end/flambda/inlining/metrics/removed_operations.cmo \
-  middle_end/flambda/terms/rec_info_expr.cmo \
   middle_end/flambda/terms/flambda.cmo \
   middle_end/flambda/terms/flambda_unit.cmo
 

@@ -14,7 +14,7 @@
 (*                                                                        *)
 (**************************************************************************)
 
-[@@@ocaml.warning "+a-4-30-40-41-42"]
+[@@@ocaml.warning "+a-30-40-41-42"]
 
 type t =
   | Simple of Simple.t
@@ -129,6 +129,8 @@ let box_value name (kind : Flambda_kind.t) dbg : t * Flambda_kind.t =
     Prim (Unary (Box_number Naked_nativeint, simple), dbg), K.value
   | Fabricated ->
     Misc.fatal_error "Cannot box values of [Fabricated] kind"
+  | Rec_info ->
+    Misc.fatal_error "Cannot box values of [Rec_info] kind"
 
 let unbox_value name (kind : Flambda_kind.t) dbg : t * Flambda_kind.t =
   let simple = Simple.name name in
@@ -147,6 +149,8 @@ let unbox_value name (kind : Flambda_kind.t) dbg : t * Flambda_kind.t =
       K.naked_nativeint
   | Fabricated ->
     Misc.fatal_error "Cannot box values of [Fabricated] kind"
+  | Rec_info ->
+    Misc.fatal_error "Cannot box values of [Rec_info] kind"
 
 let at_most_generative_effects (t : t) =
   match t with
@@ -172,6 +176,7 @@ let dummy_value (kind : K.t) : t =
     | Naked_number Naked_nativeint ->
       Simple.const (Reg_width_const.naked_nativeint Targetint.zero)
     | Fabricated -> Misc.fatal_error "[Fabricated] kind not expected here"
+    | Rec_info -> Misc.fatal_error "[Rec_info] kind not expected here"
   in
   Simple simple
 

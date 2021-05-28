@@ -16,12 +16,31 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-type t =
-  | Const of Reg_width_const.Descr.t
-  | Value of Type_of_kind_value0.t Or_unknown_or_bottom.t
-  | Naked_immediate of Type_of_kind_naked_immediate0.t Or_unknown_or_bottom.t
-  | Naked_float of Type_of_kind_naked_float0.t Or_unknown_or_bottom.t
-  | Naked_int32 of Type_of_kind_naked_int32_0.t Or_unknown_or_bottom.t
-  | Naked_int64 of Type_of_kind_naked_int64_0.t Or_unknown_or_bottom.t
-  | Naked_nativeint of Type_of_kind_naked_nativeint0.t Or_unknown_or_bottom.t
-  | Rec_info of Type_of_kind_rec_info0.t Or_unknown_or_bottom.t
+module TEE = Typing_env_extension
+
+type t = Rec_info_expr.t
+
+let print ppf t =
+  Format.fprintf ppf "@[(Rec_info@ (%a))@]" Rec_info_expr.print t
+
+let print_with_cache ~cache:_ ppf t = print ppf t
+
+let apply_renaming t renaming = Rec_info_expr.apply_renaming t renaming
+
+let free_names t = Rec_info_expr.free_names t
+
+let all_ids_for_export t = Rec_info_expr.all_ids_for_export t
+
+let apply_coercion t coercion : _ Or_bottom.t =
+  if Coercion.is_id coercion then Ok t
+  else Bottom
+
+let eviscerate _ : _ Or_unknown.t = Unknown
+
+let meet _env _t1 _t2 : _ Or_bottom.t =
+  (* TODO *)
+  Bottom
+
+let join _env _t1 _t2 : _ Or_unknown.t =
+  (* TODO *)
+  Unknown
