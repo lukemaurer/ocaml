@@ -17,23 +17,13 @@
 [@@@ocaml.warning "+a-4-9-30-40-41-42"]
 
 type t
-type exported
 
 include Identifiable.S with type t := t
 
 val create : string -> t
 
-val name : t -> string
+(** Wrap a variable as a depth variable. The variable must have kind
+    [Rec_info]. *)
+val of_var : Variable.t -> t
 
-val name_stamp : t -> int
-
-val print_with_cache : cache:Printing_cache.t -> Format.formatter -> t -> unit
-
-val rename : t -> t
-
-val export : t -> exported
-
-val import : exported -> t
-
-val map_compilation_unit :
-  (Compilation_unit.t -> Compilation_unit.t) -> exported -> exported
+val var : t -> Variable.t

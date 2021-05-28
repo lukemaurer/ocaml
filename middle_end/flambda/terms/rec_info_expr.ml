@@ -71,7 +71,11 @@ let rec apply_renaming t perm =
   match t with
   | Const _ -> t
   | Var dv ->
-    Var (Renaming.apply_depth_variable perm dv)
+    let dv =
+      Renaming.apply_variable perm (Depth_variable.var dv)
+      |> Depth_variable.of_var
+    in
+    Var dv
   | Succ t ->
     Succ (apply_renaming t perm)
   | Unroll_to (unroll_depth, t) ->
@@ -79,7 +83,8 @@ let rec apply_renaming t perm =
 
 let rec free_names = function
   | Const _ -> Name_occurrences.empty
-  | Var dv -> Name_occurrences.singleton_depth_variable dv
+  | Var dv ->
+    Name_occurrences.singleton_variable (Depth_variable.var dv) Name_mode.normal
   | Succ t
   | Unroll_to (_, t) -> free_names t
 
