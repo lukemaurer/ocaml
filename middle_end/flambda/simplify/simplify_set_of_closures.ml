@@ -165,12 +165,17 @@ end = struct
                   Code_id.Map.find (FD.code_id function_decl)
                     old_to_new_code_ids_all_sets
                 in
+                let rec_info : _ Or_unknown.t =
+                  (* In its own body, every function has an unknown recursion
+                     depth *)
+                  Unknown
+                in
                 function_decl_type
                   ~pass:Inlining_report.Before_simplify
                   denv function_decl
                   ~code_id:new_code_id
                   ~cost_metrics_source:From_denv
-                  Rec_info.unknown)
+                  rec_info)
               (Function_declarations.funs function_decls)
           in
           Closure_id.Map.mapi (fun closure_id _function_decl ->
@@ -502,13 +507,18 @@ let simplify_function context ~used_closure_vars ~shareable_constants
           ~code_id:new_code_id
           ~is_tupled:(FD.is_tupled function_decl)
       else
+        let rec_info : Depth_variable.Or_zero.t Or_unknown.t =
+          (* This is the intrinsic type of the function as seen outside its
+             own scope, so its [Rec_info] says its depth is zero *)
+          Known Depth_variable.Or_zero.zero
+        in
         (* We need to manually specify the cost metrics to use to ensure that
            they are the one of the body after simplification. *)
         function_decl_type
           ~pass:Inlining_report.After_simplify
           ~cost_metrics_source:(Metrics cost_metrics)
           (DA.denv dacc_after_body) function_decl
-          Rec_info.unknown
+          rec_info
     in
     { function_decl;
       new_code_id;

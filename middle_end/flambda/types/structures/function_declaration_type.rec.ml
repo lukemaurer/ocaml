@@ -23,7 +23,7 @@ module Inlinable = struct
   type t = {
     code_id : Code_id.t;
     dbg : Debuginfo.t;
-    rec_info : Rec_info.t;
+    rec_info : Depth_variable.Or_zero.t Or_unknown.t;
     is_tupled : bool;
     must_be_inlined : bool;
   }
@@ -39,7 +39,7 @@ module Inlinable = struct
         )@]"
       Code_id.print code_id
       Debuginfo.print_compact dbg
-      Rec_info.print rec_info
+      (Or_unknown.print Depth_variable.Or_zero.print) rec_info
       is_tupled
       must_be_inlined
 
@@ -53,6 +53,7 @@ module Inlinable = struct
 
   let code_id t = t.code_id
   let dbg t = t.dbg
+  let rec_info t = t.rec_info
   let is_tupled t = t.is_tupled
   let must_be_inlined t = t.must_be_inlined
 
@@ -61,7 +62,7 @@ module Inlinable = struct
            must_be_inlined = _ } as t) renaming =
     let code_id' = Renaming.apply_code_id renaming code_id in
     if code_id == code_id' then t
-    else { t with code_id = code_id'; rec_info = Rec_info.unknown }
+    else { t with code_id = code_id'; }
 
 end
 
@@ -131,6 +132,7 @@ let all_ids_for_export (t : t) =
 let apply_renaming (t : t) renaming : t =
   match t with
   | Bottom | Unknown -> t
+  | Ok _ when false -> assert false
   | Ok (Inlinable inlinable) ->
     Ok (Inlinable (Inlinable.apply_renaming inlinable renaming))
   | Ok (Non_inlinable non_inlinable) ->
@@ -176,20 +178,29 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
   | Ok (Inlinable {
       code_id = code_id1;
       dbg = dbg1;
-      rec_info = _;
+      rec_info = rec_info1;
       is_tupled = is_tupled1;
       must_be_inlined = must_be_inlined1;
     }),
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      rec_info = _;
+      rec_info = _rec_info2;
       is_tupled = is_tupled2;
       must_be_inlined = must_be_inlined2;
     }) ->
     let typing_env = Meet_env.env env in
     let target_code_age_rel = TE.code_age_relation typing_env in
     let resolver = TE.code_age_relation_resolver typing_env in
+    let rec_info =
+      (* CR-someday lmaurer: Give [Rec_info_expr] proper meet and join, if
+        possible. If we see the depth as an upper bound and the unroll depth as
+        a lower bound, both meet and join are sensible and easy to define.
+        However, we don't always treat the unroll depth as a lower bound: if
+        it's None or Some 1, we sometimes unroll, but if it's Some 0, we never
+        unroll. *)
+      rec_info1
+    in
     let check_other_things_and_return code_id : (t * TEE.t) Or_bottom.t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
       assert (Bool.equal is_tupled1 is_tupled2);
@@ -197,7 +208,7 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
       Ok (Ok (Inlinable {
           code_id;
           dbg = dbg1;
-          rec_info = Rec_info.unknown;
+          rec_info;
           is_tupled = is_tupled1;
           must_be_inlined = must_be_inlined1;
         }),
@@ -248,23 +259,32 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
     (* CR mshinwell: This should presumably return [Non_inlinable] if
        the arities match. *)
     Unknown
+
   | Ok (Inlinable {
       code_id = code_id1;
       dbg = dbg1;
-      rec_info = _;
+      rec_info = rec_info1;
       is_tupled = is_tupled1;
       must_be_inlined = must_be_inlined1;
     }),
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      rec_info = _;
+      rec_info = rec_info2;
       is_tupled = is_tupled2;
       must_be_inlined = must_be_inlined2;
     }) ->
     let typing_env = Join_env.target_join_env env in
     let target_code_age_rel = TE.code_age_relation typing_env in
     let resolver = TE.code_age_relation_resolver typing_env in
+    let rec_info : _ Or_unknown.t =
+      (* A join of two rec_infos is a bit easier to imagine than a meet, but still
+        undoubtedly very rare. *)
+      if (Or_unknown.equal Depth_variable.Or_zero.equal) rec_info1 rec_info2 then
+        rec_info1
+      else
+        Unknown
+    in
     let check_other_things_and_return code_id : t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
       assert (Bool.equal is_tupled1 is_tupled2);
@@ -272,7 +292,7 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
       Ok (Inlinable {
         code_id;
         dbg = dbg1;
-        rec_info = Rec_info.unknown;
+        rec_info;
         is_tupled = is_tupled1;
         must_be_inlined = must_be_inlined1;
       })
@@ -291,5 +311,16 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
     | Unknown -> Unknown
     end
 
-let apply_coercion (t : t) _coercion : t Or_bottom.t =
-  Ok t
+let apply_coercion (t : t) (coercion : Coercion.t) : t Or_bottom.t =
+  match t with
+  | Unknown | Bottom | Ok (Non_inlinable _) -> Ok t
+  | Ok (Inlinable ({ rec_info; _ } as inlinable)) ->
+    (* Assuming here that both the coercion and the [Rec_info_expr.t] have been
+       canonicalized *)
+    match coercion, rec_info with
+    | Id, _ | _, Unknown -> Ok t
+    | Change_depth { from; to_ }, Known dv ->
+      if Depth_variable.Or_zero.equal from dv then
+        Ok (Ok (Inlinable { inlinable with rec_info = Known to_ }))
+      else
+        Bottom

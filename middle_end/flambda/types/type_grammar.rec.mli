@@ -167,7 +167,7 @@ val kind_for_const : Reg_width_const.t -> Flambda_kind.t
 val create_inlinable_function_declaration
    : code_id:Code_id.t
   -> dbg:Debuginfo.t
-  -> rec_info:Rec_info.t
+  -> rec_info:Depth_variable.Or_zero.t Or_unknown.t
   -> is_tupled:bool
   -> must_be_inlined:bool
   -> Function_declaration_type.t
