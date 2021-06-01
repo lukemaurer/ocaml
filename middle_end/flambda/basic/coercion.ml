@@ -2,11 +2,9 @@
 (*                                                                        *)
 (*                                 OCaml                                  *)
 (*                                                                        *)
-(*                       Pierre Chambart, OCamlPro                        *)
-(*           Mark Shinwell and Leo White, Jane Street Europe              *)
+(*                   Mark Shinwell, Jane Street Europe                    *)
 (*                                                                        *)
-(*   Copyright 2013--2021 OCamlPro SAS                                    *)
-(*   Copyright 2014--2021 Jane Street Group LLC                           *)
+(*   Copyright 2019 Jane Street Group LLC                                 *)
 (*                                                                        *)
 (*   All rights reserved.  This file is distributed under the terms of    *)
 (*   the GNU Lesser General Public License version 2.1, with the          *)
@@ -14,8 +12,23 @@
 (*                                                                        *)
 (**************************************************************************)
 
-[@@@ocaml.warning "+a-9-30-40-41-42"]
+[@@@ocaml.warning "+a-30-40-41-42"]
 
-include module type of struct include Reg_width_things.Depth_variable end
+include Reg_width_things.Coercion
 
-val create : string -> t
+let free_names = function
+  | Id -> Name_occurrences.empty
+  | Change_depth { from; to_ } ->
+    let add (dv : Depth_variable.Or_zero.t) names =
+      match dv with
+      | Zero -> names
+      | Var dv ->
+        Name_occurrences.add_variable names (Depth_variable.var dv)
+          Name_mode.normal
+    in
+    Name_occurrences.empty |> add from |> add to_
+
+let apply_renaming t renaming =
+  map_depth_variables t ~f:(fun dv ->
+      Renaming.apply_variable renaming (Depth_variable.var dv)
+      |> Depth_variable.of_var)

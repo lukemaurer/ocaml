@@ -98,6 +98,31 @@ module Variable : sig
     (Compilation_unit.t -> Compilation_unit.t) -> exported -> exported
 end
 
+module Depth_variable : sig
+  type t = private Variable.t
+
+  include Identifiable.S with type t := t
+
+  val of_var : Variable.t -> t
+
+  val var : t -> Variable.t
+
+  module Or_zero : sig
+    type depth_variable := t
+
+    type t = private
+      | Var of depth_variable
+      | Zero
+
+    include Identifiable.S with type t := t
+
+    val var : depth_variable -> t
+    val zero : t
+
+    val map_var : t -> f:(depth_variable -> depth_variable) -> t
+  end
+end
+
 module Symbol : sig
   type t = private Table_by_int_id.Id.t
   type exported
@@ -136,6 +161,41 @@ module Name : sig
     -> var:(Variable.t -> 'a)
     -> symbol:(Symbol.t -> 'a)
     -> 'a
+end
+
+module Coercion : sig
+  type t = private
+    | Id
+    | Change_depth of {
+        from : Depth_variable.Or_zero.t;
+        to_ : Depth_variable.Or_zero.t;
+      }
+
+  val change_depth
+    : from:Depth_variable.Or_zero.t
+    -> to_:Depth_variable.Or_zero.t
+    -> t
+
+  val id : t
+
+  (* CR lmaurer: This should be renamed to [is_obviously_id] since we can't
+    guarantee in [Change_depth { from; to_ }] that [from] and [to_] are
+    distinct (in any context) *)
+  val is_id : t -> bool
+
+  val inverse : t -> t
+
+  val compose : t -> then_:t -> t option
+
+  val compose_exn : t -> then_:t -> t
+
+  val print : Format.formatter -> t -> unit
+
+  val equal : t -> t -> bool
+
+  val hash : t -> int
+
+  val map_depth_variables : t -> f:(Depth_variable.t -> Depth_variable.t) -> t
 end
 
 module Simple : sig

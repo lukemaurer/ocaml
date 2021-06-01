@@ -222,32 +222,6 @@ module Symbol_data = struct
       Linkage_name.equal linkage_name1 linkage_name2
 end
 
-module Simple_data = struct
-  type t = {
-    simple : Id.t;  (* always without [Coercion] *)
-    coercion : Coercion.t;
-  }
-
-  let flags = simple_flags
-
-  let print ppf { simple = _; coercion; } =
-    Format.fprintf ppf "@[<hov 1>\
-        @[<hov 1>(coercion@ %a)@]\
-        @]"
-      Coercion.print coercion
-
-  let hash { simple; coercion; } =
-    Hashtbl.hash (Id.hash simple, Coercion.hash coercion)
-
-  let equal t1 t2 =
-    if t1 == t2 then true
-    else
-      let { simple = simple1; coercion = coercion1; } = t1 in
-      let { simple = simple2; coercion = coercion2; } = t2 in
-      Id.equal simple1 simple2
-        && Coercion.equal coercion1 coercion2
-end
-
 module Const = struct
   type t = Id.t
   type exported = Const_data.t
@@ -401,6 +375,8 @@ module Variable = struct
       }
 end
 
+module Depth_variable = Depth_variable0.Make(Variable)
+
 module Symbol = struct
   type t = Id.t
   type exported = Symbol_data.t
@@ -505,6 +481,34 @@ module Name = struct
   module Tbl = Identifiable.Make_tbl (Numbers.Int) (Map)
 end
 
+module Coercion = Coercion0.Make(Depth_variable)
+
+module Simple_data = struct
+  type t = {
+    simple : Id.t;  (* always without [Coercion] *)
+    coercion : Coercion.t;
+  }
+
+  let flags = simple_flags
+
+  let print ppf { simple = _; coercion; } =
+    Format.fprintf ppf "@[<hov 1>\
+        @[<hov 1>(coercion@ %a)@]\
+        @]"
+      Coercion.print coercion
+
+  let hash { simple; coercion; } =
+    Hashtbl.hash (Id.hash simple, Coercion.hash coercion)
+
+  let equal t1 t2 =
+    if t1 == t2 then true
+    else
+      let { simple = simple1; coercion = coercion1; } = t1 in
+      let { simple = simple2; coercion = coercion2; } = t2 in
+      Id.equal simple1 simple2
+        && Coercion.equal coercion1 coercion2
+end
+
 module Simple = struct
   type t = Id.t
   type exported = Simple_data.t
@@ -573,9 +577,10 @@ module Simple = struct
           ~name:(fun name ~coercion:_ -> Name.print ppf name)
           ~const:(fun cst -> Const.print ppf cst)
       in
-      match coercion t with
-      | Id -> print ppf t
-      | Non_id _ as coercion ->
+      let coercion = coercion t in
+      if Coercion.is_id coercion then
+        print ppf t
+      else
         Format.fprintf ppf "@[<hov 1>(coerce@ %a@ %a)@]"
           print t
           Coercion.print coercion
@@ -593,11 +598,10 @@ module Simple = struct
   let with_coercion t new_coercion =
     if Coercion.is_id new_coercion then t
     else
-      match coercion t with
-      | Id ->
+      if Coercion.is_id (coercion t) then
         let data : Simple_data.t = { simple = t; coercion = new_coercion; } in
         Table.add !grand_table_of_simples data
-      | Non_id _ ->
+      else
         Misc.fatal_errorf "Cannot add [Coercion] to [Simple] %a that already \
             has non-identity [Coercion]"
           print t

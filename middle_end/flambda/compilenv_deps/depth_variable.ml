@@ -16,25 +16,6 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-type t = Variable.t
+include Reg_width_things.Depth_variable
 
-include Identifiable.Make(struct
-  type nonrec t = t
-
-  let compare = Variable.compare
-  let hash = Variable.hash
-  let equal = Variable.equal
-
-  let print ppf t =
-    Format.fprintf ppf "@<0>%s%a@<0>%s"
-      (Flambda_colours.depth_variable ())
-      Variable.print t
-      (Flambda_colours.normal ())
-
-  let output chan t =
-    print (Format.formatter_of_out_channel chan) t
-end)
-
-let create name = Variable.create name
-let of_var t = t
-let var t = t
+let create name = of_var (Variable.create name)

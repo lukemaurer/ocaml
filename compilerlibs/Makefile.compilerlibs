@@ -189,7 +189,7 @@ MIDDLE_END_FLAMBDA_COMPILENV_DEPS=\
   middle_end/flambda/compilenv_deps/flambda_colours.cmo \
   middle_end/flambda/compilenv_deps/compilation_unit.cmo \
   middle_end/flambda/compilenv_deps/rec_info.cmo \
-  middle_end/flambda/compilenv_deps/coercion.cmo \
+  middle_end/flambda/compilenv_deps/coercion0.cmo \
   middle_end/flambda/compilenv_deps/reg_width_things.cmo \
   middle_end/flambda/compilenv_deps/symbol.cmo \
   middle_end/flambda/compilenv_deps/variable.cmo \
@@ -214,6 +214,7 @@ MIDDLE_END_FLAMBDA_BASIC=\
   middle_end/flambda/naming/name_occurrences.cmo \
   middle_end/flambda/types/basic/unit.cmo \
   middle_end/flambda/basic/or_variable.cmo \
+  middle_end/flambda/basic/coercion.cmo \
   middle_end/flambda/basic/simple.cmo \
   middle_end/flambda/basic/closure_id.cmo \
   middle_end/flambda/cmx/contains_ids.cmo \
