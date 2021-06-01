@@ -311,14 +311,7 @@ let simplify_named0 dacc (bindable_let_bound : Bindable_let_bound.t)
        though. *)
     let bound_var = Bindable_let_bound.must_be_singleton bindable_let_bound in
     let new_rec_info_expr =
-      let find_var dv =
-        let ty = DE.find_variable (DA.denv dacc) (dv |> Depth_variable.var) in
-        match Flambda_type.prove_rec_info (DA.typing_env dacc) ty with
-        | Proved rec_info_expr -> Some rec_info_expr
-        | Unknown -> None
-        | Invalid -> (* Shouldn't currently be possible *) assert false
-      in
-      Rec_info_expr.simplify rec_info_expr ~find_var
+      Simplify_rec_info_expr.simplify_rec_info_expr dacc rec_info_expr
     in
     let ty = T.this_rec_info rec_info_expr in
     let dacc = DA.add_variable dacc bound_var ty in
