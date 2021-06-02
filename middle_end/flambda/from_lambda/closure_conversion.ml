@@ -1017,19 +1017,6 @@ and close_one_function acc ~external_env ~by_closure_id decl
       exn_continuation params ~dbg ~body ~my_closure ~my_depth
       ~free_names_of_body:Unknown
   in
-  begin
-    if !Clflags.dump_rawflambda then
-      Format.eprintf "@[<v>\
-                      my_closure: %a@ \
-                      my_depth: %a@ \
-                      body: %a@ \
-                      params_and_body: %a\
-                      ]"
-        Variable.print my_closure
-        Depth_variable.print my_depth
-        Expr.print body
-        Function_params_and_body.print params_and_body
-  end;
   let params_arity = Kinded_parameter.List.arity_with_subkinds params in
   let is_tupled =
     match Function_decl.kind decl with
