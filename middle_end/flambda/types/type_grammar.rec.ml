@@ -996,6 +996,11 @@ let join ?bound_name env t1 t2 =
       K.naked_nativeint t1 t2 ty1 ty2
       ~force_to_kind:force_to_kind_naked_nativeint
       ~to_type:(fun ty -> Naked_nativeint ty)
+  | Rec_info ty1, Rec_info ty2 ->
+    T_RI.meet env
+      K.rec_info t1 t2 ty1 ty2
+      ~force_to_kind:force_to_kind_rec_info
+      ~to_type:(fun ty -> Rec_info ty)
   | (Value _ | Naked_immediate _ | Naked_float _ | Naked_int32 _
     | Naked_int64 _ | Naked_nativeint _ | Rec_info _), _ ->
     Misc.fatal_errorf "Kind mismatch upon join:@ %a@ versus@ %a"
