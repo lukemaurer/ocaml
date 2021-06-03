@@ -16,17 +16,20 @@
 
 include Reg_width_things.Coercion
 
-let free_names = function
+let free_names_with_mode t mode =
+  match t with
   | Id -> Name_occurrences.empty
   | Change_depth { from; to_ } ->
     let add (dv : Depth_variable.Or_zero.t) names =
       match dv with
       | Zero -> names
       | Var dv ->
-        Name_occurrences.add_variable names (Depth_variable.var dv)
-          Name_mode.normal
+        Name_occurrences.add_variable names (Depth_variable.var dv) mode
     in
     Name_occurrences.empty |> add from |> add to_
+
+let free_names t = free_names_with_mode t Name_mode.normal
+let free_names_in_types t = free_names_with_mode t Name_mode.in_types
 
 let apply_renaming t renaming =
   map_depth_variables t ~f:(fun dv ->

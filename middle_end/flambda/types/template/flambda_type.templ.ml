@@ -204,12 +204,27 @@ let prove_single_closures_entry' env t : _ proof_allowing_kind_mismatch =
   | Naked_nativeint _ -> Wrong_kind
   | Rec_info _ -> Wrong_kind
 
+let print_proof f ppf : _ proof -> unit = function
+  | Proved proof -> f ppf proof
+  | Unknown -> Format.pp_print_string ppf "<unknown>"
+  | Invalid -> Format.pp_print_string ppf "<invalid>"
+
 let prove_single_closures_entry env t : _ proof =
-  match prove_single_closures_entry' env t with
+  (fun ans ->
+     if !Clflags.dump_rawflambda then begin
+       let pp ppf (_, _, decl) = Function_declaration_type.print ppf decl in
+       Format.eprintf "@[<hov 1>prove_single_closures_entry@ %a@ ->@ %a@ =@ %a@]@.%!"
+         print t
+         Resolved_type.print (expand_head t env)
+         (print_proof pp) ans
+     end;
+     ans
+  ) @@
+  ((match prove_single_closures_entry' env t with
   | Proved proof -> Proved proof
   | Unknown -> Unknown
   | Invalid -> Invalid
-  | Wrong_kind -> Misc.fatal_errorf "Type has wrong kind: %a" print t
+  | Wrong_kind -> Misc.fatal_errorf "Type has wrong kind: %a" print t) : _ proof)
 
 (* CR mshinwell: Try to functorise or otherwise factor out across the
    various number kinds. *)

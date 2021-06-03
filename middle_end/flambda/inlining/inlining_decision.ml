@@ -409,24 +409,69 @@ let might_inline dacc ~apply ~function_decl ~simplify_expr ~return_arity
       Speculatively_not_inline { cost_metrics; evaluated_to; threshold }
 
 let make_decision_for_call_site dacc ~simplify_expr ~function_decl
-      ~function_decl_rec_info:_ ~apply ~return_arity : Call_site_decision.t =
+      ~apply ~return_arity : Call_site_decision.t =
+  let function_decl_rec_info = I.rec_info function_decl in
+  (* CR lmaurer: This should probably be what I.rec_info returns *)
+  let function_decl_rec_info =
+    match function_decl_rec_info with
+    | Unknown -> Rec_info_expr.unknown
+    | Known dv -> Rec_info_expr.var_or_zero dv
+  in
   let inline = Apply.inline apply in
+  if !Clflags.dump_flambda then begin
+    let evaluated_rec_info =
+      Simplify_rec_info_expr.evaluate_rec_info_expr dacc function_decl_rec_info
+    in
+    Format.eprintf "@[<hov 1>make_decision_for_call_site@ %a@ %a@]@.%!"
+      Apply.print apply
+      Simplify_rec_info_expr.Evaluated_rec_info_expr.print evaluated_rec_info
+  end;
   match inline with
   | Never_inline -> Never_inline_attribute
   | Default_inline | Unroll _ | Always_inline | Hint_inline ->
-      if Inlining_state.is_depth_exceeded (Apply.inlining_state apply)
+    let unrolling_depth =
+      Simplify_rec_info_expr.known_unrolling_depth dacc function_decl_rec_info
+    in
+    match unrolling_depth with
+    | Some 0 ->
+      Unrolling_depth_exceeded
+    | Some _ ->
+      might_inline dacc ~apply ~function_decl ~simplify_expr ~return_arity
+    | None ->
+      (* This is semantically dodgy: If we really think of a free depth variable
+         as [Unknown], then we shouldn't be considering inlining here, because
+         we don't _know_ that we're not unrolling. The behavior is what we want,
+         though (and is consistent with FLambda 1): If there's a free depth
+         variable, that means this is an internal recursive call, which means we
+         consider unrolling if [@unrolled] appears. If it's known that the
+         unrolling depth is zero, that means we're inlining into another
+         function and we're done unrolling, so we stop inlining
+         unconditionally. I'm not actually sure what this means; possibly it
+         means that meet and join have to treat the unrolling depth as a
+         flat domain, since [None] and [Some 0] are not comparable. *)
+      let apply_inlining_state = Apply.inlining_state apply in
+      if Inlining_state.is_depth_exceeded apply_inlining_state
       then
         Max_inlining_depth_exceeded
       else
         match inline with
         | Never_inline -> assert false
         | Default_inline ->
-          might_inline dacc ~apply ~function_decl ~simplify_expr ~return_arity
+          if
+            Simplify_rec_info_expr.depth_may_be_at_least
+              dacc function_decl_rec_info (max_rec_depth + 1)
+          then
+            Recursion_depth_exceeded
+          else
+            might_inline dacc ~apply ~function_decl ~simplify_expr ~return_arity
         | Unroll unroll_to ->
+          let unroll_to =
+            (* This is duplicative of logic in [Simplify_rec_info_expr].  *)
+            match unrolling_depth with
+            | None -> unroll_to
+            | Some unrolling_depth ->
+              if unrolling_depth > unroll_to then unrolling_depth else unroll_to
+          in
           Attribute_unroll unroll_to
         | Always_inline | Hint_inline ->
           Attribute_always
-
-let _ = Call_site_decision.Unrolling_depth_exceeded
-let _ = Call_site_decision.Recursion_depth_exceeded
-let _ = max_rec_depth

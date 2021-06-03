@@ -28,6 +28,17 @@ type t = {
   descr : descr;
 }
 
+let print ppf { dacc = _; descr } =
+  match descr with
+  | Zero_terms ->
+    Format.pp_print_string ppf "(dropped or symbol)"
+  | Single_term { let_bound; simplified_defining_expr; _ } ->
+    Format.fprintf ppf "@[<hov 1>%a@ = %a@]"
+      Bindable_let_bound.print let_bound
+      Simplified_named.print simplified_defining_expr
+  | Multiple_bindings_to_symbols map ->
+    Var_in_binding_pos.Map.print Symbol.print ppf map
+
 let with_dacc ~dacc t = { t with dacc }
 
 let have_simplified_to_zero_terms dacc =

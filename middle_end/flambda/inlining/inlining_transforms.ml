@@ -23,8 +23,8 @@ module DE = Downwards_env
 module I = Flambda_type.Function_declaration_type.Inlinable
 module VB = Var_in_binding_pos
 
-let make_inlined_body ~callee ~unroll_to ~params ~args ~my_closure ~body
-      ~exn_continuation ~return_continuation ~apply_exn_continuation
+let make_inlined_body ~callee ~params ~args ~my_closure ~my_depth ~rec_info
+      ~body ~exn_continuation ~return_continuation ~apply_exn_continuation
       ~apply_return_continuation =
   let perm = Renaming.empty in
   let perm =
@@ -39,10 +39,17 @@ let make_inlined_body ~callee ~unroll_to ~params ~args ~my_closure ~body
       (Exn_continuation.exn_handler exn_continuation)
       apply_exn_continuation
   in
-  let callee =
-    (* CR xclerc for xclerc: build the proper coercion. *)
-    Simple.apply_coercion callee (ignore unroll_to; Coercion.id)
-    |> Option.get  (* CR mshinwell: improve *)
+  let body =
+    Let.create
+      (Bindable_let_bound.singleton
+         (VB.create (Depth_variable.var my_depth) Name_mode.normal))
+      (Named.create_rec_info rec_info)
+      ~body
+      (* Here and below, we don't need to give any name occurrence
+         information (thank goodness!) since the entirety of the
+         expression we're building will be re-simplified. *)
+      ~free_names_of_body:Unknown
+    |> Expr.create_let
   in
   Expr.apply_renaming
     (Expr.bind_parameters_to_args_no_simplification
@@ -52,9 +59,6 @@ let make_inlined_body ~callee ~unroll_to ~params ~args ~my_closure ~body
                    (VB.create my_closure Name_mode.normal))
                 (Named.create_simple callee)
                 ~body
-                (* Here and below, we don't need to give any name occurrence
-                   information (thank goodness!) since the entirety of the
-                   expression we're building will be re-simplified. *)
                 ~free_names_of_body:Unknown
               |> Expr.create_let))
     perm
@@ -173,16 +177,27 @@ let inline dacc ~apply ~unroll_to function_decl =
   (* CR mshinwell: Add meet constraint to the return continuation *)
   let denv = DA.denv dacc in
   let code = DE.find_code denv (I.code_id function_decl) in
+  let rec_info_from_type =
+    match I.rec_info function_decl with
+    | Known dv -> Rec_info_expr.var_or_zero dv
+    | Unknown -> Rec_info_expr.unknown
+  in
+  let rec_info =
+    match unroll_to with
+    | Some unroll_depth ->
+      Rec_info_expr.unroll_to unroll_depth rec_info_from_type
+    | None -> rec_info_from_type
+  in
   let denv = DE.enter_inlined_apply ~called_code:code ~apply denv in
   let params_and_body =
     Code.params_and_body_must_be_present code ~error_context:"Inlining"
   in
   Function_params_and_body.pattern_match params_and_body
     ~f:(fun ~return_continuation exn_continuation params ~body ~my_closure
-            ~is_my_closure_used:_ ~my_depth:_->
+            ~is_my_closure_used:_ ~my_depth ->
           let make_inlined_body =
-            make_inlined_body ~callee ~unroll_to ~params ~args ~my_closure ~body
-              ~exn_continuation ~return_continuation
+            make_inlined_body ~callee ~params ~args ~my_closure ~my_depth
+              ~rec_info ~body ~exn_continuation ~return_continuation
           in
           let expr =
             assert (Exn_continuation.extra_args exn_continuation = []);

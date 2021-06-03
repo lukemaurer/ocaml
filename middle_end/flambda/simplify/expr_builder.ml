@@ -38,6 +38,14 @@ let create_let uacc (bound_vars : BLB.t) defining_expr
      described in the comment at the top of [Simplify_let.rebuild_let]. *)
   let generate_phantom_lets = UA.generate_phantom_lets uacc in
   let free_names_of_body = UA.name_occurrences uacc in
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf
+      "@[<hov 1>create_let@ %a@ = %a@ \
+       @[<hov 1>(free_names_of_body@ %a)@]@]@.%!"
+      BLB.print bound_vars
+      Named.print defining_expr
+      Name_occurrences.print free_names_of_body
+  end;
   let bound_vars, keep_binding, let_creation_result =
     let greatest_name_mode =
       match bound_vars with
@@ -97,16 +105,17 @@ let create_let uacc (bound_vars : BLB.t) defining_expr
         | Simple _ | Prim _ | Set_of_closures _ | Static_consts _ -> false
       in
       let has_uses = Name_mode.Or_absent.is_present greatest_name_mode in
-      let user_visible =
-        BLB.exists_all_bound_vars bound_vars ~f:(fun bound_var ->
-          Variable.user_visible (VB.var bound_var))
+      let can_phantomise =
+        not is_depth
+        && BLB.exists_all_bound_vars bound_vars ~f:(fun bound_var ->
+            Variable.user_visible (VB.var bound_var))
       in
       let will_delete_binding =
         (* CR mshinwell: This should detect whether there is any
            provenance info associated with the variable.  If there isn't, the
            [Let] can be deleted even if debugging information is being
            generated. *)
-        is_depth || not (has_uses || (generate_phantom_lets && user_visible))
+        not (has_uses || (generate_phantom_lets && can_phantomise))
       in
       if will_delete_binding then begin
         bound_vars, None, Defining_expr_deleted_at_runtime

@@ -319,28 +319,37 @@ end
 module C = Context_for_multiple_sets_of_closures
 
 let dacc_inside_function context ~used_closure_vars ~shareable_constants
-      ~params ~my_closure closure_id ~closure_bound_names_inside_function
-      ~inlining_arguments =
+      ~params ~my_closure ~my_depth closure_id
+      ~closure_bound_names_inside_function ~inlining_arguments =
   let dacc =
     DA.map_denv (C.dacc_inside_functions context) ~f:(fun denv ->
       let denv = DE.add_parameters_with_unknown_types denv params in
       let denv =
         DE.restrict_inlining_arguments inlining_arguments denv
       in
-      match
-        Closure_id.Map.find closure_id closure_bound_names_inside_function
-      with
-      | exception Not_found ->
-        Misc.fatal_errorf "No closure name for closure ID %a.@ \
-            closure_bound_names_inside_function = %a."
-          Closure_id.print closure_id
-          (Closure_id.Map.print Name_in_binding_pos.print)
-          closure_bound_names_inside_function
-      | name ->
-        let name = Name_in_binding_pos.name name in
-        DE.add_variable denv
-          (Var_in_binding_pos.create my_closure NM.normal)
-          (T.alias_type_of K.value (Simple.name name)))
+      let denv =
+        match
+          Closure_id.Map.find closure_id closure_bound_names_inside_function
+        with
+        | exception Not_found ->
+          Misc.fatal_errorf "No closure name for closure ID %a.@ \
+              closure_bound_names_inside_function = %a."
+            Closure_id.print closure_id
+            (Closure_id.Map.print Name_in_binding_pos.print)
+            closure_bound_names_inside_function
+        | name ->
+          let name = Name_in_binding_pos.name name in
+          DE.add_variable denv
+            (Var_in_binding_pos.create my_closure NM.normal)
+            (T.alias_type_of K.value (Simple.name name))
+     in
+     let denv =
+       let my_depth =
+         Var_in_binding_pos.create (Depth_variable.var my_depth) Name_mode.normal
+       in
+       DE.add_variable denv my_depth (T.unknown K.rec_info)
+     in
+     denv)
   in
   dacc
   |> DA.map_denv ~f:(fun denv ->
@@ -369,6 +378,9 @@ let simplify_function context ~used_closure_vars ~shareable_constants
   let name = Closure_id.to_string closure_id in
   Profile.record_call ~accumulate:true name (fun () ->
     let code_id = FD.code_id function_decl in
+    if !Clflags.dump_rawflambda then begin
+      Format.eprintf "IN@ %a@.%!" Code_id.print code_id
+    end;
     let code = DE.find_code (DA.denv (C.dacc_prior_to_sets context)) code_id in
     let params_and_body =
       Code.params_and_body_must_be_present code ~error_context:"Simplifying"
@@ -380,7 +392,7 @@ let simplify_function context ~used_closure_vars ~shareable_constants
                 ~my_closure ~is_my_closure_used:_ ~my_depth ->
           let dacc =
             dacc_inside_function context ~used_closure_vars ~shareable_constants
-              ~params ~my_closure closure_id
+              ~params ~my_closure ~my_depth closure_id
               ~closure_bound_names_inside_function
               ~inlining_arguments:(Code.inlining_arguments code)
           in
@@ -440,6 +452,10 @@ let simplify_function context ~used_closure_vars ~shareable_constants
               Name_occurrences.remove_var free_names_of_code my_closure
             in
             let free_names_of_code =
+              Name_occurrences.remove_var free_names_of_code
+                (Depth_variable.var my_depth)
+            in
+            let free_names_of_code =
               Name_occurrences.diff free_names_of_code
                 (KP.List.free_names params)
             in
@@ -448,11 +464,12 @@ let simplify_function context ~used_closure_vars ~shareable_constants
               && Name_occurrences.no_continuations free_names_of_code)
             then begin
               Misc.fatal_errorf "Unexpected free name(s):@ %a@ in:@ \n%a@ \n\
-                  Simplified version:@ fun %a %a ->@ \n  %a"
+                  Simplified version:@ fun %a %a %a ->@ \n  %a"
                 Name_occurrences.print free_names_of_code
                 Function_declaration.print function_decl
                 KP.List.print params
                 Variable.print my_closure
+                Depth_variable.print my_depth
                 (RE.print (UA.are_rebuilding_terms uacc)) body
             end;
             params_and_body, dacc_after_body, free_names_of_code, uacc,
@@ -520,6 +537,9 @@ let simplify_function context ~used_closure_vars ~shareable_constants
           (DA.denv dacc_after_body) function_decl
           rec_info
     in
+    if !Clflags.dump_rawflambda then begin
+      Format.eprintf "DONE@ %a@.%!" Code_id.print code_id
+    end;
     { function_decl;
       new_code_id;
       code;

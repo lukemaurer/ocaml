@@ -17,8 +17,7 @@
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
 (** An expression for the state of recursive inlining at a given occurrence.
-    Forms the right-hand side of a [Let_expr] binding for a depth variable. Will
-    evaluate (given a suitable environment) to a [Rec_info.t]. *)
+    Forms the right-hand side of a [Let_expr] binding for a depth variable. *)
 type t = private
   | Const of { depth : int Or_infinity.t; unroll_to : int option }
   | Var of Depth_variable.t
@@ -36,6 +35,8 @@ val const : depth:int Or_infinity.t -> unroll_to:int option -> t
 val var : Depth_variable.t -> t
 val succ : t -> t
 val unroll_to : int -> t -> t
+
+val var_or_zero : Depth_variable.Or_zero.t -> t
 
 val is_obviously_initial : t -> bool
 

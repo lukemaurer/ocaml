@@ -171,27 +171,22 @@ module Make (Head : Type_head_intf.S
           in
           force_to_head ~force_to_kind typ
         in
-        let [@inline always] name name ~coercion:_ : _ Or_unknown_or_bottom.t =
-          (* CR lmaurer: Coercion dropped! *)
+        let [@inline always] name name ~coercion : _ Or_unknown_or_bottom.t =
           let t = force_to_kind (TE.find env name (Some kind)) in
           match descr t with
           | No_alias Bottom -> Bottom
           | No_alias Unknown -> Unknown
-          | No_alias (Ok head) -> Ok head
-            (* CR mshinwell: Fix coercion
-            begin match coercion with
-            | None -> Ok head
-            | Some coercion ->
-              (* CR mshinwell: check coercion handling is correct, after
-                 recent changes in this area *)
+          | No_alias (Ok head) ->
+            if Coercion.is_id coercion then
+              Ok head
+            else
               (* [simple] already has [coercion] applied to it (see
                  [get_canonical_simple], above).  However we also need to
                  apply it to the expanded head of the type. *)
-              match Head.apply_coercion head coercion with
+              begin match Head.apply_coercion head coercion with
               | Bottom -> Bottom
               | Ok head -> Ok head
-            end
-            *)
+              end
           | Equals _ ->
             Misc.fatal_errorf "Canonical alias %a should never have \
                 [Equals] type %a:@ %a"

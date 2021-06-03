@@ -99,17 +99,14 @@ let [@inline always] must_be_name t =
     ~name:(fun name ~coercion -> Some (name, coercion))
     ~const:(fun _ -> None)
 
-let free_names t =
+let free_names_with_mode t mode =
   pattern_match t
-    (* CR lmaurer: Need to change this once coercions have names in them *)
-    ~name:(fun name ~coercion:_ -> Name_occurrences.singleton_name name Name_mode.normal)
+    ~name:(fun name ~coercion ->
+        Name_occurrences.add_name (Coercion.free_names coercion) name mode)
     ~const:(fun _ -> Name_occurrences.empty)
 
-let free_names_in_types t =
-  pattern_match t
-    (* CR lmaurer: Need to change this once coercions have names in them *)
-    ~name:(fun name ~coercion:_ -> Name_occurrences.singleton_name name Name_mode.in_types)
-    ~const:(fun _ -> Name_occurrences.empty)
+let free_names t = free_names_with_mode t Name_mode.normal
+let free_names_in_types t = free_names_with_mode t Name_mode.in_types
 
 let apply_renaming t perm =
   Renaming.apply_simple perm t

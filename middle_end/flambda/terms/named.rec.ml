@@ -67,7 +67,7 @@ let invariant_returning_kind env t : Flambda_primitive.result_kind =
          constants *)
       Singleton K.value
     | Rec_info _ ->
-      Singleton K.fabricated
+      Singleton K.rec_info
   with Misc.Fatal_error ->
     Misc.fatal_errorf "(during invariant checks) Context is:@ %a" print t
 

@@ -120,7 +120,6 @@ let simplify_direct_full_application ~simplify_expr dacc apply function_decl_opt
           ~simplify_expr
           ~apply
           ~function_decl
-          ~function_decl_rec_info:Rec_info.unknown
           ~return_arity:result_arity
       in
       let code_id = T.Function_declaration_type.Inlinable.code_id function_decl in
@@ -148,7 +147,17 @@ let simplify_direct_full_application ~simplify_expr dacc apply function_decl_opt
   in
   match inlined with
   | Some (dacc, inlined) ->
-    simplify_expr dacc inlined ~down_to_up
+    if !Clflags.dump_rawflambda then begin
+      Format.eprintf "@[<hov 1>INLINING@ %a@.BODY@ %a@]@.%!"
+        Code_id.print callee's_code_id
+        Expr.print inlined
+    end;
+    let expr = simplify_expr dacc inlined ~down_to_up in
+    if !Clflags.dump_rawflambda then begin
+      Format.eprintf "@[<hov 1>DONE INLINING@ %a@]@.%!"
+        Code_id.print callee's_code_id
+    end;
+    expr
   | None ->
     let dacc, use_id =
       match Apply.continuation apply with

@@ -16,12 +16,9 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-module TEE = Typing_env_extension
-
 type t = Rec_info_expr.t
 
-let print ppf t =
-  Format.fprintf ppf "@[(Rec_info@ (%a))@]" Rec_info_expr.print t
+let print ppf t = Rec_info_expr.print ppf t
 
 let print_with_cache ~cache:_ ppf t = print ppf t
 

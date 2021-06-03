@@ -56,3 +56,5 @@ val bindings_to_place_in_any_order
   -> binding_to_place list
 
 val with_dacc : dacc:Downwards_acc.t -> t -> t
+
+val print : Format.formatter -> t -> unit

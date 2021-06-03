@@ -29,6 +29,11 @@ let var dv = Var dv
 let succ t = Succ t
 let unroll_to unroll_depth t = Unroll_to (unroll_depth, t)
 
+let var_or_zero (dv_or_zero : Depth_variable.Or_zero.t) =
+  match dv_or_zero with
+  | Zero -> initial
+  | Var dv -> var dv
+
 let is_obviously_initial = function
   | Const { depth = Finite 0; unroll_to = None } -> true
   | Const { depth = (Finite _ | Infinity); _ }
@@ -67,19 +72,21 @@ let rec equal t1 t2 =
     unroll_depth1 = unroll_depth2 && equal t1 t2
   | (Const _ | Var _ | Succ _ | Unroll_to _), _ -> false
 
-let rec apply_renaming t perm =
-  match t with
-  | Const _ -> t
+let rec apply_renaming orig perm =
+  match orig with
+  | Const _ -> orig
   | Var dv ->
-    let dv =
+    let new_dv =
       Renaming.apply_variable perm (Depth_variable.var dv)
       |> Depth_variable.of_var
     in
-    Var dv
+    if dv == new_dv then orig else Var new_dv
   | Succ t ->
-    Succ (apply_renaming t perm)
+    let new_t = apply_renaming t perm in
+    if t == new_t then orig else Succ new_t
   | Unroll_to (unroll_depth, t) ->
-    Unroll_to (unroll_depth, apply_renaming t perm)
+    let new_t = apply_renaming t perm in
+    if t == new_t then orig else Unroll_to (unroll_depth, new_t)
 
 let rec free_names = function
   | Const _ -> Name_occurrences.empty

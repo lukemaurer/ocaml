@@ -997,7 +997,7 @@ let join ?bound_name env t1 t2 =
       ~force_to_kind:force_to_kind_naked_nativeint
       ~to_type:(fun ty -> Naked_nativeint ty)
   | Rec_info ty1, Rec_info ty2 ->
-    T_RI.meet env
+    T_RI.join ?bound_name env
       K.rec_info t1 t2 ty1 ty2
       ~force_to_kind:force_to_kind_rec_info
       ~to_type:(fun ty -> Rec_info ty)

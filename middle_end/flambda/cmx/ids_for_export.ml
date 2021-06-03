@@ -13,6 +13,7 @@
 (*                                                                        *)
 (**************************************************************************)
 
+module Coercion = Reg_width_things.Coercion
 module Const = Reg_width_things.Const
 module Simple = Reg_width_things.Simple
 

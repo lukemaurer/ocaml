@@ -43,6 +43,8 @@ module Map_to_canonical = struct
           if Coercion.equal coercion1 coercion2 then
             Some coercion1
           else
+            (* CR lmaurer: We might not want to die here!! Finding best
+               alias when joining, where coercion is different on each side?? *)
             fatal_inconsistent
               ~func_name:"Aliases.Map_to_canonical.inter"
               elt coercion1 coercion2)
