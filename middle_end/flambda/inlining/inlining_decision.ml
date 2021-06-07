@@ -418,7 +418,7 @@ let make_decision_for_call_site dacc ~simplify_expr ~function_decl
     | Known dv -> Rec_info_expr.var_or_zero dv
   in
   let inline = Apply.inline apply in
-  if !Clflags.dump_flambda then begin
+  if !Clflags.dump_rawflambda then begin
     let evaluated_rec_info =
       Simplify_rec_info_expr.evaluate_rec_info_expr dacc function_decl_rec_info
     in

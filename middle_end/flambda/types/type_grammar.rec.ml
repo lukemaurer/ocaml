@@ -179,6 +179,15 @@ let all_ids_for_export t =
   | Rec_info ty -> T_RI.all_ids_for_export ty
 
 let apply_coercion t coercion : _ Or_bottom.t =
+  (fun ans ->
+    if not (Coercion.is_id coercion) && !Clflags.dump_rawflambda then begin
+      Format.eprintf "@[<hov 1>apply_coercion@ %a@ %a@ = %a@]@.%!"
+        Coercion.print coercion
+        print t
+        (Or_bottom.print print) ans
+    end;
+    ans
+  ) @@ ( begin
   match t with
   | Value ty ->
     begin match T_V.apply_coercion ty coercion with
@@ -215,6 +224,7 @@ let apply_coercion t coercion : _ Or_bottom.t =
     | Ok ty -> Ok (Rec_info ty)
     | Bottom -> Bottom
     end
+  end : t Or_bottom.t)
 
 let eviscerate t env =
   match t with

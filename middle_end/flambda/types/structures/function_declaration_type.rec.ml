@@ -312,19 +312,16 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
     end
 
 let apply_coercion (t : t) (coercion : Coercion.t) : t Or_bottom.t =
-  match t with
-  | Unknown | Bottom | Ok (Non_inlinable _) -> Ok t
-  | Ok (Inlinable ({ rec_info; _ } as inlinable)) ->
-    if !Clflags.dump_rawflambda then begin
-      Format.eprintf "@[<hov 1>apply_coercion@ %a@ %a@]@.%!"
-        Coercion.print coercion
-        (Or_unknown.print Depth_variable.Or_zero.print) rec_info
-    end;
-    match coercion, rec_info with
-    | Id, _ | _, Unknown -> Ok t
-    | Change_depth { from; to_ }, Known dv ->
-      (* CR lmaurer: We should really be checking that [from] matches [dv], but
-         that requires either passing in a typing environment or making sure
-         that rec_infos get canonicalized. *)
-      ignore (from, dv);
+  match coercion with
+  | Id -> Ok t
+  | Change_depth { from; to_ } ->
+    begin match t with
+    | Unknown | Bottom | Ok (Non_inlinable _) -> Ok t
+    | Ok (Inlinable ({ rec_info; _ } as inlinable)) ->
+      (* CR lmaurer: We should really be checking that [from] matches the
+         current [rec_info], but that requires either passing in a typing
+         environment or making absolutely sure that rec_infos get
+         canonicalized. *)
+      ignore (from, rec_info);
       Ok (Ok (Inlinable { inlinable with rec_info = Known to_ }))
+    end

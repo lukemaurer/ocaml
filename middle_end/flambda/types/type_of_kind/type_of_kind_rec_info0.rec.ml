@@ -34,10 +34,10 @@ let apply_coercion t coercion : _ Or_bottom.t =
 
 let eviscerate _ : _ Or_unknown.t = Unknown
 
-let meet _env _t1 _t2 : _ Or_bottom.t =
-  (* TODO *)
-  Bottom
+let meet _env t1 t2 : _ Or_bottom.t =
+  if Rec_info_expr.equal t1 t2 then
+    Ok (t1, Typing_env_extension.empty ())
+  else Bottom
 
-let join _env _t1 _t2 : _ Or_unknown.t =
-  (* TODO *)
-  Unknown
+let join _env t1 t2 : _ Or_unknown.t =
+  if Rec_info_expr.equal t1 t2 then Known t1 else Unknown
