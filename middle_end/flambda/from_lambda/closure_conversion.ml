@@ -77,11 +77,6 @@ let rec declare_const acc (const : Lambda.structured_constant)
   match const with
   | Const_base (Const_int c) ->
     acc, Tagged_immediate (Target_imm.int (Targetint.OCaml.of_int c)), "int"
-  | Const_pointer p ->
-    (* CR mshinwell: This needs to be removed. *)
-    acc,
-    Tagged_immediate (Target_imm.int (Targetint.OCaml.of_int p)),
-    "const_ptr"
   | Const_base (Const_char c) ->
     acc, Tagged_immediate (Target_imm.char c), "char"
   | Const_base (Const_string (s, _, _)) ->
@@ -487,9 +482,6 @@ let rec close acc env (ilam : Ilambda.t) : Acc.t * Expr_with_acc.t =
         |> Expr_with_acc.create_let
     in
     close_named acc env ~let_bound_var:var defining_expr cont
-  | Let_mutable _ ->
-    Misc.fatal_error "[Let_mutable] should have been removed by \
-      [Eliminate_mutable_vars]"
   | Let_rec (defs, body) -> close_let_rec acc env ~defs ~body
   | Let_cont { name; is_exn_handler; params; recursive; body;
       handler; } ->
@@ -533,7 +525,7 @@ let rec close acc env (ilam : Ilambda.t) : Acc.t * Expr_with_acc.t =
         ~cost_metrics_of_handlers:cost_metrics_of_handler
     end
   | Apply { kind; func; args; continuation; exn_continuation;
-      loc; should_be_tailcall = _; inlined; specialised = _; } ->
+      loc; tailcall = _; inlined; specialised = _; } ->
     let acc, call_kind =
       match kind with
       | Function -> acc, Call_kind.indirect_function_call_unknown_arity ()
@@ -678,9 +670,6 @@ and close_named acc env ~let_bound_var (named : Ilambda.named)
   | Prim { prim; args; loc; exn_continuation; } ->
     close_primitive acc env ~let_bound_var named prim ~args loc
       exn_continuation k
-  | Assign _ | Mutable_read _ ->
-    Misc.fatal_error "[Assign] and [Mutable_read] should have been removed \
-      by [Eliminate_mutable_vars]"
 
 and close_let_rec acc env ~defs ~body =
   let env =
