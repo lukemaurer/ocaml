@@ -16,10 +16,32 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
+module Unrolling_state : sig
+  (** The current state of unrolling. Can be set by an [unroll_to] expression.
+      *)
+  type t = private
+    | Not_unrolling
+      (** Unrolling has not begun. *)
+    | Unrolling of { remaining_depth : int }
+      (** Unrolling has begun and will continue until [remaining_depth] is
+          zero. A subsequent [unroll_to] expression may increase the
+          remaining depth. *)
+    | Do_not_unroll
+      (** No unrolling may occur. [unroll_to] has no effect. *)
+
+  val not_unrolling : t
+  val unrolling : remaining_depth:int -> t
+  val do_not_unroll : t
+
+  val equal : t -> t -> bool
+
+  val print : Format.formatter -> t -> unit
+end
+
 (** An expression for the state of recursive inlining at a given occurrence.
     Forms the right-hand side of a [Let_expr] binding for a depth variable. *)
 type t = private
-  | Const of { depth : int Or_infinity.t; unroll_to : int option }
+  | Const of { depth : int Or_infinity.t; unrolling : Unrolling_state.t }
   | Var of Depth_variable.t
   | Succ of t
     (** The next depth. If we inline an occurrence with depth [d], then in the
@@ -31,7 +53,8 @@ type t = private
 
 val initial : t
 val unknown : t
-val const : depth:int Or_infinity.t -> unroll_to:int option -> t
+val do_not_inline : t
+val const : depth:int Or_infinity.t -> unrolling:Unrolling_state.t -> t
 val var : Depth_variable.t -> t
 val succ : t -> t
 val unroll_to : int -> t -> t

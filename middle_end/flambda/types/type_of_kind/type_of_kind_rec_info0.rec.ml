@@ -37,7 +37,23 @@ let eviscerate _ : _ Or_unknown.t = Unknown
 let meet _env t1 t2 : _ Or_bottom.t =
   if Rec_info_expr.equal t1 t2 then
     Ok (t1, Typing_env_extension.empty ())
-  else Bottom
+  else begin
+    if !Clflags.dump_rawflambda then begin
+      Format.eprintf "[@<hov 1>meet:@ %a@ ∧ %a@ = %a@]"
+        print t1
+        print t2
+        (Or_bottom.print print) Or_bottom.Bottom
+    end;
+    Bottom
+  end
 
 let join _env t1 t2 : _ Or_unknown.t =
-  if Rec_info_expr.equal t1 t2 then Known t1 else Unknown
+  if Rec_info_expr.equal t1 t2 then Known t1 else begin
+    if !Clflags.dump_rawflambda then begin
+      Format.eprintf "[@<hov 1>join:@ %a@ ∨ %a@ = %a@]"
+        print t1
+        print t2
+        (Or_unknown.print print) Or_unknown.Unknown
+    end;
+    Unknown
+  end

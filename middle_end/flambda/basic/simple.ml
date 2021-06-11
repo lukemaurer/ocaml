@@ -69,9 +69,9 @@ let apply_coercion_exn t applied_coercion =
   match apply_coercion t applied_coercion with
   | Some t -> t
   | None ->
-    Misc.fatal_errorf "Cannot apply coercion %a to %a"
-      print t
+    Misc.fatal_errorf "Cannot@ apply@ coercion@ %a@ to@ %a"
       Coercion.print applied_coercion
+      print t
 
 (* CR mshinwell: Make naming consistent with [Name] re. the option type *)
 

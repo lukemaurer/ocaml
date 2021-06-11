@@ -779,6 +779,12 @@ let mem_simple ?min_name_mode t simple =
     ~name:(fun name ~coercion:_ -> mem ?min_name_mode t name)
     ~const:(fun _ -> true)
 
+let mem_simple_including_coercion ?min_name_mode t simple =
+  Name_occurrences.fold_variables (Simple.free_names simple) ~init:true
+    ~f:(fun ok var ->
+      ok && mem ?min_name_mode t (Name.var var)
+    )
+
 let with_current_level t ~current_level =
   let t = { t with current_level; } in
   invariant t;
@@ -985,6 +991,11 @@ let rec add_equation0 (t:t) name ty =
   res
 
 and add_equation t name ty =
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>add_equation@ %a@ = %a@]@.%!"
+      Name.print name
+      Type_grammar.print ty
+  end;
   if !Clflags.flambda_invariant_checks then begin
     let existing_ty = find t name None in
     if not (K.equal (Type_grammar.kind existing_ty) (Type_grammar.kind ty))
@@ -1038,7 +1049,6 @@ and add_equation t name ty =
       let canonical = Aliases.get_canonical_ignoring_name_mode aliases name in
       canonical, t, ty
     | alias_of ->
-      let alias_of = Simple.without_coercion alias_of in
       (* Forget where [name] and [alias_of] came from---our job is now to
          record that they're equal. In general, they have canonical expressions
          [c_n] and [c_a], respectively, so what we ultimately need to record is
@@ -1070,6 +1080,11 @@ and add_equation t name ty =
       in
       alias_of_demoted_element, t, ty
   in
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>add_equation'@ %a@ = %a@]@.%!"
+      Simple.print simple
+      Type_grammar.print ty
+  end;
   (* We have [(coerce <bare_lhs> <coercion>) : <ty>].
      Thus [<bare_lhs> : (coerce <ty> <coercion>^-1)]. *)
   let bare_lhs = Simple.without_coercion simple in
@@ -1105,10 +1120,19 @@ and add_equation t name ty =
         match Type_grammar.meet env ty existing_ty with
         | Bottom -> Type_grammar.bottom_like ty, t
         | Ok (meet_ty, env_extension) ->
+          if !Clflags.dump_rawflambda then begin
+            Format.eprintf "@[<hov 1>extension from meet:@ %a@]@.%!"
+              Typing_env_extension.print env_extension
+          end;
           meet_ty, add_env_extension t env_extension
     in
     Simple.pattern_match bare_lhs ~name ~const:(fun _ -> ty, t)
   in
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>add_equation'' @ %a@ = %a@]@.%!"
+      Simple.print bare_lhs
+      Type_grammar.print ty
+  end;
   let [@inline always] name name ~coercion =
     assert (Coercion.is_id coercion); (* true by definition *)
     add_equation0 t name ty
@@ -1316,7 +1340,7 @@ let type_simple_in_term_exn t ?min_name_mode simple =
       ~min_name_mode ~min_binding_time
   with
   | exception Misc.Fatal_error ->
-    if !Clflags.flambda_context_on_error then begin
+    if true || !Clflags.flambda_context_on_error then begin
       Format.eprintf "\n%sContext is:%s typing environment@ %a\n"
         (Flambda_colours.error ())
         (Flambda_colours.normal ())
@@ -1398,7 +1422,7 @@ let get_canonical_simple_exn t ?min_name_mode ?name_mode_of_existing_simple
       ~min_name_mode ~min_binding_time
   with
   | exception Misc.Fatal_error ->
-    if !Clflags.flambda_context_on_error then begin
+    if true || !Clflags.flambda_context_on_error then begin
       Format.eprintf "\n%sContext is:%s typing environment@ %a\n"
         (Flambda_colours.error ())
         (Flambda_colours.normal ())
@@ -1409,21 +1433,19 @@ let get_canonical_simple_exn t ?min_name_mode ?name_mode_of_existing_simple
 
 let get_alias_then_canonical_simple_exn t ?min_name_mode
       ?name_mode_of_existing_simple typ =
+  if false && !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>get_alias_then_canonical_simple_exn@ %a@ %a@]@.%!"
+      Type_grammar.print typ
+      print t
+  end;
   let simple = Type_grammar.get_alias_exn typ in
-  let simple = Simple.without_coercion simple in
   get_canonical_simple_exn t ?min_name_mode ?name_mode_of_existing_simple
     simple
 
 let aliases_of_simple t ~min_name_mode simple =
   Aliases.get_aliases (aliases t) simple
   |> Aliases.Alias_set.filter ~f:(fun alias ->
-    let name_mode =
-      Binding_time.With_name_mode.name_mode
-        (binding_time_and_mode_of_simple t alias)
-    in
-    match Name_mode.compare_partial_order name_mode min_name_mode with
-    | None -> false
-    | Some c -> c >= 0)
+    mem_simple_including_coercion t alias ~min_name_mode)
 
 let aliases_of_simple_allowable_in_types t simple =
   aliases_of_simple t ~min_name_mode:Name_mode.in_types simple

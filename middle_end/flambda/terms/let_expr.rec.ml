@@ -302,10 +302,14 @@ let print_let_symbol_with_cache ~cache ppf t =
 
 let print_with_cache ~cache ppf
       ({ name_abstraction = _; defining_expr; } as t) =
-  let let_bound_var_colour bindable_let_bound =
+  let let_bound_var_colour bindable_let_bound defining_expr =
     let name_mode = Bindable_let_bound.name_mode bindable_let_bound in
     if Name_mode.is_phantom name_mode then Flambda_colours.elide ()
-    else Flambda_colours.variable ()
+    else match (defining_expr : Named.t) with
+      | Rec_info _ ->
+        Flambda_colours.depth_variable ()
+      | Simple _ | Prim _ | Set_of_closures _ | Static_consts _ ->
+        Flambda_colours.variable ()
   in
   let rec let_body (expr : Expr.t) =
     match Expr.descr expr with
@@ -316,7 +320,7 @@ let print_with_cache ~cache ppf
           | Singleton _ | Set_of_closures _ ->
             fprintf ppf
               "@ @[<hov 1>@<0>%s%a@<0>%s =@<0>%s@ %a@]"
-              (let_bound_var_colour bindable_let_bound)
+              (let_bound_var_colour bindable_let_bound defining_expr)
               Bindable_let_bound.print bindable_let_bound
               (Flambda_colours.elide ())
               (Flambda_colours.normal ())
@@ -333,7 +337,7 @@ let print_with_cache ~cache ppf
           @[<hov 1>@<0>%s%a@<0>%s =@<0>%s@ %a@]"
         (Flambda_colours.expr_keyword ())
         (Flambda_colours.normal ())
-        (let_bound_var_colour bindable_let_bound)
+        (let_bound_var_colour bindable_let_bound defining_expr)
         Bindable_let_bound.print bindable_let_bound
         (Flambda_colours.elide ())
         (Flambda_colours.normal ())

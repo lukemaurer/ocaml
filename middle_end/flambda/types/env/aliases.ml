@@ -963,12 +963,46 @@ let mem t element =
       print t
   *)
 
+let coercion_is_accessible t coercion ~min_name_mode ~min_binding_time =
+  true ||
+  Name_occurrences.fold_variables (Coercion.free_names coercion) ~init:true
+    ~f:(fun ok var ->
+        let name_mode =
+          try
+            name_mode t (Simple.var var) ~min_binding_time
+          with
+          | Not_found ->
+            Misc.fatal_errorf "It@ ain't@ here@ %a@ %a"
+              Variable.print var
+              print t
+        in
+        ok
+        &&
+        match Name_mode.compare_partial_order name_mode min_name_mode with
+        | Some c -> c >= 0
+        | None -> false
+      )
+  |> fun ans ->
+  if not ans then begin
+    Format.eprintf
+      "@[<hov 1>Nope@ \
+       @[<hov 1>(coercion@ %a)@]@ \
+       @[<hov 1>(min_name_mode@ %a)@]@ \
+       @[<hov 1>(min_binding_time@ %a)@]@ \
+       @[<hov 1>(t@ %a)@]@]@.%!"
+      Coercion.print coercion
+      Name_mode.print min_name_mode
+      Binding_time.print min_binding_time
+      print t
+  end; ans
+
+
 let get_canonical_element_exn t element elt_name_mode ~min_name_mode
       ~min_binding_time =
   let canonical_element, name_mode, coercion_from_canonical_to_element =
     match canonical t element with
     | Is_canonical ->
-      element, elt_name_mode, Coercion.id
+      Simple.without_coercion element, elt_name_mode, Simple.coercion element
     | Alias_of_canonical { canonical_element; coercion_to_canonical; } ->
       let name_mode = name_mode t canonical_element ~min_binding_time in
       canonical_element, name_mode, Coercion.inverse coercion_to_canonical
@@ -991,7 +1025,7 @@ Format.eprintf "looking for canonical for %a, candidate canonical %a, min order 
     let filter_by_scope name_mode names =
       if Name_mode.equal name_mode Name_mode.in_types then names
       else
-        Name.Map.filter (fun name _coercion ->
+        Name.Map.filter (fun name coercion_from_name_to_canonical ->
             let binding_time_and_mode =
               Name.Map.find name t.binding_times_and_modes
             in
@@ -1000,7 +1034,15 @@ Format.eprintf "looking for canonical for %a, candidate canonical %a, min order 
                 binding_time_and_mode
                 ~min_binding_time
             in
-            Name_mode.equal name_mode scoped_name_mode)
+            (* We need to figure out whether the eventually-returned coercion
+               is accessible in this scope. *)
+            let coercion_from_name_to_element =
+              Coercion.compose_exn coercion_from_name_to_canonical
+                ~then_:coercion_from_canonical_to_element
+            in
+            Name_mode.equal name_mode scoped_name_mode
+            && (coercion_is_accessible t coercion_from_name_to_element
+                 ~min_name_mode ~min_binding_time))
           names
     in
     match

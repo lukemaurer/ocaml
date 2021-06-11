@@ -83,6 +83,8 @@ val mem : ?min_name_mode:Name_mode.t -> t -> Name.t -> bool
 
 val mem_simple : ?min_name_mode:Name_mode.t -> t -> Simple.t -> bool
 
+val mem_simple_including_coercion : ?min_name_mode:Name_mode.t -> t -> Simple.t -> bool
+
 (* CR mshinwell: clarify that this does not meet *)
 (* CR vlaviron: If the underlying level in the extension defines several
    variables, then there is no guarantee that the binding order in the result

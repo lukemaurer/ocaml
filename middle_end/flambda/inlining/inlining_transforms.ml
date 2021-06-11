@@ -24,8 +24,8 @@ module I = Flambda_type.Function_declaration_type.Inlinable
 module VB = Var_in_binding_pos
 
 let make_inlined_body ~callee ~params ~args ~my_closure ~my_depth ~rec_info
-      ~body ~exn_continuation ~return_continuation ~apply_exn_continuation
-      ~apply_return_continuation =
+      ~unroll_to ~body ~exn_continuation ~return_continuation
+      ~apply_exn_continuation ~apply_return_continuation =
   let perm = Renaming.empty in
   let perm =
     match (apply_return_continuation : Apply.Result_continuation.t) with
@@ -39,11 +39,50 @@ let make_inlined_body ~callee ~params ~args ~my_closure ~my_depth ~rec_info
       (Exn_continuation.exn_handler exn_continuation)
       apply_exn_continuation
   in
+  let callee, rec_info =
+    match unroll_to with
+    | None ->
+      callee, rec_info
+    | Some unroll_depth ->
+      let unrolled_rec_info =
+        Rec_info_expr.unroll_to unroll_depth rec_info
+      in
+      let prev_depth =
+        (* CR lmaurer: This should currently always work, but it's ugly and
+           fragile. We want to create a coercion from [rec_info] to
+           [unrolled_rec_info]. The trouble is that coercions can only carry
+           depth variables, not full rec_info expressions, since that simplifies
+           a lot (rec_info_expr and simple would be mutually recursive otherwise
+           ...). We could just let [prev_depth] be a fresh variable and then
+           bind it to whatever [rec_info] is, but the check in
+           [Coercion.compose_exn] has no way of knowing that [prev_depth] is the
+           same rec info that [callee] is coerced to. We could extract the
+           variable from the coercion on [callee] but that strikes me as even
+           uglier. *)
+        match (rec_info : Rec_info_expr.t) with
+        | Var var ->
+          Depth_variable.Or_zero.var var
+        | Const _ | Succ _ | Unroll_to _ ->
+          if Rec_info_expr.is_obviously_initial rec_info then
+            Depth_variable.Or_zero.zero
+          else
+            Misc.fatal_errorf "Unexpected complex rec info:@ %a"
+              Rec_info_expr.print rec_info
+      in
+      let coercion_from_callee_to_unrolled_callee =
+        Coercion.change_depth
+          ~from:prev_depth
+          ~to_:(Depth_variable.Or_zero.var my_depth)
+      in
+      let callee =
+        Simple.apply_coercion_exn callee coercion_from_callee_to_unrolled_callee
+      in
+      callee, unrolled_rec_info
+  in
   let body =
     Let.create
-      (Bindable_let_bound.singleton
-         (VB.create (Depth_variable.var my_depth) Name_mode.normal))
-      (Named.create_rec_info rec_info)
+      (Bindable_let_bound.singleton (VB.create my_closure Name_mode.normal))
+      (Named.create_simple callee)
       ~body
       (* Here and below, we don't need to give any name occurrence
          information (thank goodness!) since the entirety of the
@@ -51,16 +90,18 @@ let make_inlined_body ~callee ~params ~args ~my_closure ~my_depth ~rec_info
       ~free_names_of_body:Unknown
     |> Expr.create_let
   in
+  let body =
+    let bound =
+      Bindable_let_bound.singleton
+        (VB.create (Depth_variable.var my_depth) Name_mode.normal)
+    in
+    Let.create bound (Named.create_rec_info rec_info) ~body
+    ~free_names_of_body:Unknown
+    |> Expr.create_let
+  in
   Expr.apply_renaming
     (Expr.bind_parameters_to_args_no_simplification
-       ~params ~args
-       ~body:(Let.create
-                (Bindable_let_bound.singleton
-                   (VB.create my_closure Name_mode.normal))
-                (Named.create_simple callee)
-                ~body
-                ~free_names_of_body:Unknown
-              |> Expr.create_let))
+       ~params ~args ~body)
     perm
 
 let wrap_inlined_body_for_exn_support ~extra_args ~apply_exn_continuation
@@ -177,16 +218,10 @@ let inline dacc ~apply ~unroll_to function_decl =
   (* CR mshinwell: Add meet constraint to the return continuation *)
   let denv = DA.denv dacc in
   let code = DE.find_code denv (I.code_id function_decl) in
-  let rec_info_from_type =
+  let rec_info =
     match I.rec_info function_decl with
     | Known dv -> Rec_info_expr.var_or_zero dv
     | Unknown -> Rec_info_expr.unknown
-  in
-  let rec_info =
-    match unroll_to with
-    | Some unroll_depth ->
-      Rec_info_expr.unroll_to unroll_depth rec_info_from_type
-    | None -> rec_info_from_type
   in
   let denv = DE.enter_inlined_apply ~called_code:code ~apply denv in
   let params_and_body =
@@ -197,7 +232,7 @@ let inline dacc ~apply ~unroll_to function_decl =
             ~is_my_closure_used:_ ~my_depth ->
           let make_inlined_body =
             make_inlined_body ~callee ~params ~args ~my_closure ~my_depth
-              ~rec_info ~body ~exn_continuation ~return_continuation
+              ~rec_info ~unroll_to ~body ~exn_continuation ~return_continuation
           in
           let expr =
             assert (Exn_continuation.extra_args exn_continuation = []);

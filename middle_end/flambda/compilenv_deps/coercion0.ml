@@ -54,10 +54,13 @@ module Make(Depth_variable : Depth_variable0.S) = struct
     | _, Id -> Some t1
     | Change_depth { from = from1; to_ = to_1 },
       Change_depth { from = from2; to_ = to_2 } ->
-      if Depth_variable.Or_zero.equal to_1 from2 then
-        Some (change_depth ~from:from1 ~to_:to_2)
-      else
-        None
+      (* CR lmaurer: We would like to check that [to_1] equals [from_2], but we
+         can't do that without an environment. We've considered making this
+         function purely syntactic (and thus total) before; that would solve
+         the problem. Perhaps there should be a Coercion kind for semantic
+         operations? *)
+      ignore (to_1, from2);
+      Some (change_depth ~from:from1 ~to_:to_2)
 
   let compose_exn t1 ~then_:t2 =
     match compose t1 ~then_:t2 with

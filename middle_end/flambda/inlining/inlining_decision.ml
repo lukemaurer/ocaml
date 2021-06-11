@@ -430,7 +430,8 @@ let make_decision_for_call_site dacc ~simplify_expr ~function_decl
   | Never_inline -> Never_inline_attribute
   | Default_inline | Unroll _ | Always_inline | Hint_inline ->
     let unrolling_depth =
-      Simplify_rec_info_expr.known_unrolling_depth dacc function_decl_rec_info
+      Simplify_rec_info_expr.known_remaining_unrolling_depth
+        dacc function_decl_rec_info
     in
     match unrolling_depth with
     | Some 0 ->

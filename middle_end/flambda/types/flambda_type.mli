@@ -127,6 +127,11 @@ module Typing_env : sig
 
   val mem_simple : ?min_name_mode:Name_mode.t -> t -> Simple.t -> bool
 
+  (** Returns true if the given simple expression is valid in the given environment,
+      taking into account both the name itself (if any) and the coercion (if any). *)
+  (* CR lmaurer: Determine whether this should just be what [mem_simple] does. *)
+  val mem_simple_including_coercion : ?min_name_mode:Name_mode.t -> t -> Simple.t -> bool
+
   val find : t -> Name.t -> Flambda_kind.t option -> flambda_type
 
   val find_or_missing : t -> Name.t -> flambda_type option

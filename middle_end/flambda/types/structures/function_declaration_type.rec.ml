@@ -43,7 +43,18 @@ module Inlinable = struct
       is_tupled
       must_be_inlined
 
+  exception Urk
+
   let create ~code_id ~dbg ~rec_info ~is_tupled ~must_be_inlined =
+    if !Clflags.dump_rawflambda then begin match rec_info with
+    | Or_unknown.Unknown ->
+      begin try raise Urk with
+      | Urk -> let bt = Printexc.get_callstack 10 in
+                 Printf.eprintf "Unknown!!\n%a\n%!"
+                   Printexc.print_raw_backtrace bt
+      end
+    | Or_unknown.Known _ -> ()
+    end;
     { code_id;
       dbg;
       rec_info;
@@ -185,7 +196,7 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      rec_info = _rec_info2;
+      rec_info = rec_info2;
       is_tupled = is_tupled2;
       must_be_inlined = must_be_inlined2;
     }) ->
@@ -199,7 +210,18 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
         However, we don't always treat the unroll depth as a lower bound: if
         it's None or Some 1, we sometimes unroll, but if it's Some 0, we never
         unroll. *)
-      rec_info1
+      Format.eprintf "meet:@.%!";
+      if (Or_unknown.equal Depth_variable.Or_zero.equal) rec_info1 rec_info2 then
+        rec_info1
+      else begin
+        if !Clflags.dump_rawflambda then begin
+          Format.eprintf "[@<hov 1>meet:@ %a@ ∧ %a@ = %a@]@.%!"
+            (Or_unknown.print Depth_variable.Or_zero.print) rec_info1
+            (Or_unknown.print Depth_variable.Or_zero.print) rec_info2
+            (Or_bottom.print print) Or_bottom.Bottom
+        end;
+        Or_unknown.Unknown
+      end
     in
     let check_other_things_and_return code_id : (t * TEE.t) Or_bottom.t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
@@ -282,8 +304,15 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
         undoubtedly very rare. *)
       if (Or_unknown.equal Depth_variable.Or_zero.equal) rec_info1 rec_info2 then
         rec_info1
-      else
+      else begin
+        if !Clflags.dump_rawflambda then begin
+          Format.eprintf "[@<hov 1>join:@ %a@ ∨ %a@ = %a@]@.%!"
+            (Or_unknown.print Depth_variable.Or_zero.print) rec_info1
+            (Or_unknown.print Depth_variable.Or_zero.print) rec_info2
+            (Or_unknown.print print) Or_unknown.Unknown
+        end;
         Unknown
+      end
     in
     let check_other_things_and_return code_id : t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);

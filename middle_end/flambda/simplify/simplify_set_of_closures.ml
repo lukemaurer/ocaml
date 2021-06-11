@@ -121,6 +121,12 @@ end = struct
             ~suitable_for:env_inside_function
             ~bind_to:(Name.var var)
         in
+        if !Clflags.dump_rawflambda then begin
+          Format.eprintf "@[<hov 1>closure element type inside function:@ %a@ : %a@ -> %a@]@.%!"
+            Var_within_closure.print clos_var
+            Flambda_type.print type_prior_to_sets
+            Flambda_type.Typing_env_extension.With_extra_variables.print env_extension
+        end;
         let env_inside_function =
           TE.add_env_extension_with_extra_variables env_inside_function
             env_extension
@@ -269,6 +275,39 @@ end = struct
 	 term and not knowing it prohibits us from inlining it.*)
       |> DE.set_rebuild_terms
     in
+    let free_depth_variables =
+      List.map (fun set_of_closures ->
+        let vars = Set_of_closures.free_names set_of_closures in
+        Name_occurrences.fold_variables vars ~init:Depth_variable.Set.empty
+          ~f:(fun free_depth_variables var ->
+            let ty = DE.find_variable denv var in
+            match T.kind ty with
+            | Rec_info ->
+              Depth_variable.Set.add (Depth_variable.of_var var) free_depth_variables
+            | Value | Naked_number _ | Fabricated -> free_depth_variables
+          )) all_sets_of_closures
+      |> Depth_variable.Set.union_list
+    in
+    (* Pretend that any depth variables appearing free in the closure elements
+       are bound to "never inline anything" in the function. This causes them to
+       be skipped over by [make_suitable_for_environment], thus avoiding dealing
+       with in-types depth variables ending up in terms. *)
+    (* CR lmaurer: It would be better to propagate depth variables into closures
+       properly, as this would allow things like unrolling [Seq.map] where the
+       recursive call goes through a closure. For the moment, we just stop
+       unrolling cold in that situation. (It's important that we use
+       [Rec_info_expr.do_not_inline] here so that we don't start unrolling,
+       since without propagating the rec info into the closure, we don't know
+       when to stop unrolling.) *)
+    let denv_inside_functions =
+      Depth_variable.Set.fold (fun dv denv_inside_functions ->
+          let var_in_binding_pos =
+            Var_in_binding_pos.create (Depth_variable.var dv) Name_mode.normal
+          in
+          DE.add_variable denv_inside_functions var_in_binding_pos
+            (T.this_rec_info Rec_info_expr.do_not_inline)
+        ) free_depth_variables denv_inside_functions
+    in
     let env_inside_functions,
         closure_element_types_all_sets_inside_functions_rev =
       List.fold_left
@@ -379,7 +418,12 @@ let simplify_function context ~used_closure_vars ~shareable_constants
   Profile.record_call ~accumulate:true name (fun () ->
     let code_id = FD.code_id function_decl in
     if !Clflags.dump_rawflambda then begin
-      Format.eprintf "IN@ %a@.%!" Code_id.print code_id
+      Format.eprintf
+        "@[<hov 1>IN@ %a@ \
+         @[<hov 1>(closure_bound_names_inside_function@ %a)@]\
+         @]@.%!"
+        Function_declaration.print function_decl
+        (Closure_id.Map.print Name_in_binding_pos.print) closure_bound_names_inside_function
     end;
     let code = DE.find_code (DA.denv (C.dacc_prior_to_sets context)) code_id in
     let params_and_body =
@@ -396,6 +440,13 @@ let simplify_function context ~used_closure_vars ~shareable_constants
               ~closure_bound_names_inside_function
               ~inlining_arguments:(Code.inlining_arguments code)
           in
+          if !Clflags.dump_rawflambda then begin
+            if false then
+            Format.eprintf "@[<hov 1>Environment inside function:@ %a@]@.%!"
+              DE.print (DA.denv dacc) else
+            Format.eprintf "@[<hov 1>Code:@ %a@]@.%!"
+              Code.print code
+          end;
           if not (DA.no_lifted_constants dacc) then begin
             Misc.fatal_errorf "Did not expect lifted constants in [dacc]:@ %a"
               DA.print dacc
@@ -459,9 +510,22 @@ let simplify_function context ~used_closure_vars ~shareable_constants
               Name_occurrences.diff free_names_of_code
                 (KP.List.free_names params)
             in
+            let free_names_of_code_minus_depth_variables =
+              Name_occurrences.filter_names free_names_of_code
+                ~f:(fun name ->
+                    Name.pattern_match name
+                      ~var:(fun var ->
+                        match T.kind (DE.find_variable (DA.denv dacc) var) with
+                        | Rec_info -> false
+                        | Value | Naked_number _ | Fabricated -> true)
+                      ~symbol:(fun _ -> true)
+                  )
+            in
             if not (
-              Name_occurrences.no_variables free_names_of_code
-              && Name_occurrences.no_continuations free_names_of_code)
+              Name_occurrences.no_variables
+                free_names_of_code_minus_depth_variables
+              && Name_occurrences.no_continuations
+                   free_names_of_code_minus_depth_variables)
             then begin
               Misc.fatal_errorf "Unexpected free name(s):@ %a@ in:@ \n%a@ \n\
                   Simplified version:@ fun %a %a %a ->@ \n  %a"
@@ -472,6 +536,11 @@ let simplify_function context ~used_closure_vars ~shareable_constants
                 Depth_variable.print my_depth
                 (RE.print (UA.are_rebuilding_terms uacc)) body
             end;
+            let free_names_of_code =
+              (* CR lmaurer: This seems sketchy. Doing it just so we don't get a
+                 complaint from [Code.check_params_and_body]. *)
+              free_names_of_code_minus_depth_variables
+            in
             params_and_body, dacc_after_body, free_names_of_code, uacc,
             inlining_arguments
           | exception Misc.Fatal_error ->
@@ -538,7 +607,7 @@ let simplify_function context ~used_closure_vars ~shareable_constants
           rec_info
     in
     if !Clflags.dump_rawflambda then begin
-      Format.eprintf "DONE@ %a@.%!" Code_id.print code_id
+      Format.eprintf "@[<hov 1>DONE@ %a@]@.%!" Code_id.print code_id
     end;
     { function_decl;
       new_code_id;
@@ -666,6 +735,10 @@ let simplify_set_of_closures0 dacc context set_of_closures
     Function_declarations.create all_function_decls_in_set
     |> Set_of_closures.create ~closure_elements
   in
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>code@ %a@]@.%!"
+      (Code_id.Lmap.print Rebuilt_static_const.print) code
+  end;
   { set_of_closures;
     code;
     dacc;
@@ -860,7 +933,7 @@ let type_closure_elements_and_make_lifting_decision_for_one_set dacc
      scope of the closure declaration. *)
   let closure_elements, closure_element_types, symbol_projections =
     Var_within_closure.Map.fold
-      (fun closure_var env_entry
+      (fun closure_var (env_entry as orig_env_entry)
            (closure_elements, closure_element_types, symbol_projections) ->
         let env_entry, ty, symbol_projections =
           let ty = S.simplify_simple dacc env_entry ~min_name_mode in
@@ -881,6 +954,13 @@ let type_closure_elements_and_make_lifting_decision_for_one_set dacc
           in
           simple, ty, symbol_projections
         in
+        if false && !Clflags.dump_rawflambda then begin
+          Format.eprintf "@[<hov 1>closure element %a@ ⟼ %a@ ≡ %a@ = %a@]@.%!"
+            Var_within_closure.print closure_var
+            Simple.print orig_env_entry
+            Simple.print env_entry
+            Flambda_type.print ty
+        end;
         let closure_elements =
           Var_within_closure.Map.add closure_var env_entry closure_elements
         in
@@ -954,6 +1034,11 @@ let simplify_non_lifted_set_of_closures dacc
     type_closure_elements_and_make_lifting_decision_for_one_set dacc
       ~min_name_mode ~closure_bound_vars_inverse set_of_closures
   in
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>closure_element_types@ %a@]@.%s@.%!"
+      (Var_within_closure.Map.print Flambda_type.print) closure_element_types
+      (if can_lift then "can lift" else "can't lift")
+  end;
   if can_lift then
     simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
       ~closure_bound_vars set_of_closures ~closure_elements

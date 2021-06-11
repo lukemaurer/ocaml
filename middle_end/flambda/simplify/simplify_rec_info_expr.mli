@@ -26,7 +26,7 @@ val simplify_rec_info_expr
 module Evaluated_rec_info_expr : sig
   type t = private {
     depth : int Or_infinity.t;
-    unroll_to : int option;
+    unrolling : Rec_info_expr.Unrolling_state.t;
   }
 
   val print : Format.formatter -> t -> unit
@@ -43,7 +43,7 @@ val depth_may_be_at_least
   -> int
   -> bool
 
-val known_unrolling_depth
+val known_remaining_unrolling_depth
    : Downwards_acc.t
   -> Rec_info_expr.t
   -> int option

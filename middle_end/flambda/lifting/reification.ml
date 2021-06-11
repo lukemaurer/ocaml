@@ -110,10 +110,20 @@ let lift dacc ty ~bound_to static_const =
   Simplified_named.reachable term, dacc, var_ty
 
 let try_to_reify dacc (term : Simplified_named.t) ~bound_to ~allow_lifting =
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>try_to_reify@ %a@ %a@]@.%!"
+      Var_in_binding_pos.print bound_to
+      Simplified_named.print term
+  end;
   let occ_kind = Var_in_binding_pos.name_mode bound_to in
   let bound_to = Var_in_binding_pos.var bound_to in
   let denv = DA.denv dacc in
   let ty = DE.find_variable denv bound_to in
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>try_to_reify:@ %a@ = %a@]@.%!"
+      Variable.print bound_to
+      T.print ty
+  end;
   match term with
   | Invalid _ ->
     let ty = T.bottom_like ty in
@@ -142,6 +152,12 @@ let try_to_reify dacc (term : Simplified_named.t) ~bound_to ~allow_lifting =
       (* It is possible that the only [Simple] that [reify] could return is
          in fact [bound_to] -- for example when all other aliases are of
          an unsuitable occurrence kind. *)
+      if !Clflags.dump_rawflambda then begin
+        Format.eprintf "@[<hov 1>try_to_reify':@ %a@ = %a@ = %a@]@.%!"
+          Variable.print bound_to
+          T.print ty
+          Simple.print simple
+      end;
       let dacc =
         if Simple.equal simple (Simple.var bound_to) then dacc
         else

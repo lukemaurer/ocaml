@@ -20,33 +20,38 @@ module DA = Downwards_acc
 module DE = Downwards_env
 module T = Flambda_type
 
-let compute_succ ~(depth : int Or_infinity.t) ~(unroll_to : int option) =
+let compute_succ
+      ~(depth : int Or_infinity.t)
+      ~(unrolling : Rec_info_expr.Unrolling_state.t) =
   let depth : int Or_infinity.t =
     match depth with
     | Finite n -> Finite (n+1)
     | Infinity -> Infinity
   in
-  let unroll_to =
-    match unroll_to with
-    | None | Some 0 -> unroll_to
-    | Some n -> Some (n-1)
+  let unrolling =
+    match unrolling with
+    | Not_unrolling | Unrolling { remaining_depth = 0 } | Do_not_unroll ->
+      unrolling
+    | Unrolling { remaining_depth; } ->
+      let remaining_depth = remaining_depth - 1 in
+      Rec_info_expr.Unrolling_state.unrolling ~remaining_depth
   in
-  Rec_info_expr.const ~depth ~unroll_to
+  Rec_info_expr.const ~depth ~unrolling
 
-let compute_unroll_to ~depth ~old_unroll_to ~new_unroll_to =
+let compute_unroll_to ~depth ~old_unrolling_state ~unroll_to =
   (* Take the maximum of the two unroll depths. This allows an external
      caller to specify more unrolling than the recursive call sites do. *)
-  (* CR lmaurer: Can also see an argument for making this take the minimum.
-     What does FLambda 1 do? *)
-  let unroll_to =
-    match old_unroll_to with
-    | None ->
-      Some new_unroll_to
-    | Some unroll_to ->
-      if unroll_to >= new_unroll_to then old_unroll_to else
-        Some new_unroll_to
+  let unrolling =
+    match (old_unrolling_state : Rec_info_expr.Unrolling_state.t) with
+    | Not_unrolling ->
+      Rec_info_expr.Unrolling_state.unrolling ~remaining_depth:unroll_to
+    | Unrolling { remaining_depth; } ->
+      if remaining_depth >= unroll_to then old_unrolling_state else
+        Rec_info_expr.Unrolling_state.unrolling ~remaining_depth:unroll_to
+    | Do_not_unroll ->
+      old_unrolling_state
   in
-  Rec_info_expr.const ~depth ~unroll_to
+  Rec_info_expr.const ~depth ~unrolling
 
 type on_unknown =
   | Leave_unevaluated
@@ -78,16 +83,16 @@ let rec simplify_rec_info_expr0 denv orig ~on_unknown : Rec_info_expr.t =
     end
   | Succ ri ->
     begin match simplify_rec_info_expr0 denv ri ~on_unknown with
-    | Const { depth; unroll_to } ->
-      compute_succ ~depth ~unroll_to
+    | Const { depth; unrolling } ->
+      compute_succ ~depth ~unrolling
     | (Var _ | Succ _ | Unroll_to _) as new_ri ->
       if ri == new_ri then orig else Rec_info_expr.succ new_ri
     end
   | Unroll_to (unroll_depth, ri) ->
     begin match simplify_rec_info_expr0 denv ri ~on_unknown with
-    | Const { depth; unroll_to } ->
+    | Const { depth; unrolling } ->
       compute_unroll_to ~depth
-        ~old_unroll_to:unroll_to ~new_unroll_to:unroll_depth
+        ~old_unrolling_state:unrolling ~unroll_to:unroll_depth
     | (Var _ | Succ _ | Unroll_to _) as new_ri ->
       if ri == new_ri then orig else Rec_info_expr.unroll_to unroll_depth new_ri
     end
@@ -103,16 +108,23 @@ let simplify_rec_info_expr dacc rec_info_expr =
 module Evaluated_rec_info_expr = struct
   type t = {
     depth : int Or_infinity.t;
-    unroll_to : int option;
+    unrolling : Rec_info_expr.Unrolling_state.t;
   }
 
-  let print ppf { depth; unroll_to } =
+  let print ppf { depth; unrolling } =
+    let is_default_unrolling =
+      match unrolling with
+      | Not_unrolling -> true
+      | Unrolling _ | Do_not_unroll -> false
+    in
     Format.fprintf ppf
       "@[<hov 1>\
        @[<hov 1>(depth@ %a)@]@ \
-       @[<hov 1>(unroll_to@ %a)@]@]"
+       @[<hov 1>@<0>%s(unrolling@ %a)@<0>%s@]@]"
       (Or_infinity.print ~f:Format.pp_print_int) depth
-      (Misc.Stdlib.Option.print Format.pp_print_int) unroll_to
+      (if is_default_unrolling then Flambda_colours.elide () else "")
+      Rec_info_expr.Unrolling_state.print unrolling
+      (Flambda_colours.normal ())
 end
 
 let evaluate_rec_info_expr dacc rec_info_expr =
@@ -120,8 +132,8 @@ let evaluate_rec_info_expr dacc rec_info_expr =
     simplify_rec_info_expr0 (DA.denv dacc) rec_info_expr
       ~on_unknown:(Assume_value Rec_info_expr.unknown)
   with
-  | Const { depth; unroll_to } ->
-    { Evaluated_rec_info_expr.depth; unroll_to }
+  | Const { depth; unrolling } ->
+    { Evaluated_rec_info_expr.depth; unrolling }
   | Var _ | Succ _ | Unroll_to _ ->
     Misc.fatal_errorf "Unable to evaluate@ %a@ with@ dacc@ %a"
       Rec_info_expr.print rec_info_expr
@@ -133,7 +145,9 @@ let depth_may_be_at_least dacc rec_info_expr bound =
   in
   Or_infinity.compare ~f:Int.compare depth (Finite bound) >= 1
 
-let known_unrolling_depth dacc rec_info_expr =
-  let { Evaluated_rec_info_expr.unroll_to; _ } =
-    evaluate_rec_info_expr dacc rec_info_expr
-  in unroll_to
+let known_remaining_unrolling_depth dacc rec_info_expr =
+  match evaluate_rec_info_expr dacc rec_info_expr with
+  | { unrolling = Unrolling { remaining_depth }; _ } ->
+    Some remaining_depth
+  | { unrolling = (Not_unrolling | Do_not_unroll); _ } ->
+    None
