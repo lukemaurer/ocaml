@@ -459,201 +459,7 @@ let close_trap_action_opt trap_action =
         Pop { exn_handler; raise_kind = None; })
     trap_action
 
-let rec close acc env (ilam : Ilambda.t) : Acc.t * Expr_with_acc.t =
-  match ilam with
-  | Let (id, user_visible, _kind, defining_expr, body) ->
-    (* CR mshinwell: Remove [kind] on the Ilambda terms? *)
-    let body_env, var = Env.add_var_like env id user_visible in
-    let cont acc (defining_expr : Named.t option) =
-      let body_env =
-        match defining_expr with
-        | Some (Simple simple) ->
-          Env.add_simple_to_substitute body_env id simple
-        | Some _ | None -> body_env
-      in
-      (* CR pchambart: Not tail ! *)
-      let acc, body = close acc body_env body in
-      match defining_expr with
-      | None -> acc, body
-      | Some defining_expr ->
-        let var = VB.create var Name_mode.normal in
-        Let_with_acc.create acc (Bindable_let_bound.singleton var) defining_expr
-          ~body ~free_names_of_body:Unknown
-        |> Expr_with_acc.create_let
-    in
-    close_named acc env ~let_bound_var:var defining_expr cont
-  | Let_rec (defs, body) -> close_let_rec acc env ~defs ~body
-  | Let_cont { name; is_exn_handler; params; recursive; body;
-      handler; } ->
-    if is_exn_handler then begin
-      match recursive with
-      | Nonrecursive -> ()
-      | Recursive ->
-        Misc.fatal_errorf "[Let_cont]s marked as exception handlers must \
-            be [Nonrecursive]: %a"
-          Ilambda.print ilam
-    end;
-    let params_with_kinds = params in
-    let handler_env, params =
-      Env.add_vars_like env
-        (List.map (fun (param, user_visible, _kind) -> param, user_visible)
-          params)
-    in
-    let params =
-      List.map2 (fun param (_, _, kind) ->
-          Kinded_parameter.create param (LC.value_kind kind))
-        params
-        params_with_kinds
-    in
-    let cost_metrics_of_handler, acc, handler =
-      Acc.measure_cost_metrics acc ~f:(fun acc ->
-        close acc handler_env handler)
-    in
-    let acc, handler =
-      Continuation_handler_with_acc.create acc params ~handler
-        ~free_names_of_handler:Unknown
-        ~is_exn_handler
-    in
-    let acc, body = close acc env body in
-    begin match recursive with
-    | Nonrecursive ->
-      Let_cont_with_acc.create_non_recursive acc name handler ~body
-        ~free_names_of_body:Unknown ~cost_metrics_of_handler
-    | Recursive ->
-      let handlers = Continuation.Map.singleton name handler in
-      Let_cont_with_acc.create_recursive acc handlers ~body
-        ~cost_metrics_of_handlers:cost_metrics_of_handler
-    end
-  | Apply { kind; func; args; continuation; exn_continuation;
-      loc; tailcall = _; inlined; specialised = _; } ->
-    let acc, call_kind =
-      match kind with
-      | Function -> acc, Call_kind.indirect_function_call_unknown_arity ()
-      | Method { kind; obj; } ->
-        let acc, obj = find_simple acc env obj in
-        acc,
-        Call_kind.method_call (LC.method_kind kind) ~obj
-    in
-    let acc, exn_continuation =
-      close_exn_continuation acc env exn_continuation
-    in
-    let callee = find_simple_from_id env func in
-    let acc, args = find_simples acc env args in
-    let apply =
-      Apply.create ~callee
-        ~continuation:(Return continuation)
-        exn_continuation
-        ~args
-        ~call_kind
-        (Debuginfo.from_location loc)
-        ~inline:(LC.inline_attribute inlined)
-        ~inlining_state:(Inlining_state.default)
-    in
-    Expr_with_acc.create_apply acc apply
-  | Apply_cont (cont, trap_action, args) ->
-    let acc, args = find_simples acc env args in
-    let trap_action = close_trap_action_opt trap_action in
-    let apply_cont =
-      Apply_cont.create ?trap_action cont ~args ~dbg:Debuginfo.none
-    in
-    Expr_with_acc.create_apply_cont acc apply_cont
-  | Switch (scrutinee, sw) ->
-    let scrutinee = Simple.name (Env.find_name env scrutinee) in
-    let untagged_scrutinee = Variable.create "untagged" in
-    let untagged_scrutinee' =
-      VB.create untagged_scrutinee Name_mode.normal
-    in
-    let untag =
-      Named.create_prim
-        (Unary (Unbox_number Untagged_immediate, scrutinee))
-        Debuginfo.none
-    in
-    let acc, arms =
-      List.fold_left_map (fun acc (case, cont, trap_action, args) ->
-          let trap_action = close_trap_action_opt trap_action in
-          let acc, args = find_simples acc env args in
-          acc,
-          (Target_imm.int (Targetint.OCaml.of_int case),
-            Apply_cont.create ?trap_action cont ~args
-              ~dbg:Debuginfo.none))
-        acc
-        sw.consts
-    in
-    match arms, sw.failaction with
-    | [case, action], Some (default_action, default_trap_action, default_args)
-        when sw.numconsts >= 3 ->
-      (* Avoid enormous switches, where every arm goes to the same place
-         except one, that arise from single-arm [Lambda] switches with a
-         default case.  (Seen in code generated by ppx_compare for variants,
-         which exhibited quadratic size blowup.) *)
-      let compare =
-        Named.create_prim
-          (Binary (Phys_equal (Flambda_kind.naked_immediate, Eq),
-            Simple.var untagged_scrutinee,
-            Simple.const (Reg_width_const.naked_immediate case)))
-          Debuginfo.none
-      in
-      let comparison_result = Variable.create "eq" in
-      let comparison_result' = VB.create comparison_result Name_mode.normal in
-      let acc, default_action =
-        let acc, args = find_simples acc env default_args in
-        let trap_action = close_trap_action_opt default_trap_action in
-        acc,
-        Apply_cont.create ?trap_action default_action ~args
-          ~dbg:Debuginfo.none
-      in
-      let acc, switch =
-        let scrutinee = Simple.var comparison_result in
-        Expr_with_acc.create_switch acc (
-          Switch.if_then_else ~scrutinee
-            ~if_true:action
-            ~if_false:default_action)
-      in
-      let acc, body =
-        Let_with_acc.create acc (Bindable_let_bound.singleton comparison_result')
-          compare ~body:switch ~free_names_of_body:Unknown
-        |> Expr_with_acc.create_let
-      in
-      Let_with_acc.create acc (Bindable_let_bound.singleton untagged_scrutinee')
-        untag ~body ~free_names_of_body:Unknown
-      |> Expr_with_acc.create_let
-    | _, _ ->
-      let acc, arms =
-        match sw.failaction with
-        | None -> acc, Target_imm.Map.of_list arms
-        | Some (default, trap_action, args) ->
-          Numbers.Int.Set.fold (fun case (acc, cases) ->
-              let case = Target_imm.int (Targetint.OCaml.of_int case) in
-              if Target_imm.Map.mem case cases then acc, cases
-              else
-                let acc, args = find_simples acc env args in
-                let trap_action = close_trap_action_opt trap_action in
-                let default =
-                  Apply_cont.create ?trap_action default ~args
-                    ~dbg:Debuginfo.none
-                in
-                acc,
-                Target_imm.Map.add case default cases)
-            (Numbers.Int.zero_to_n (sw.numconsts - 1))
-            (acc, Target_imm.Map.of_list arms)
-      in
-      if Target_imm.Map.is_empty arms then
-        Expr_with_acc.create_invalid acc ()
-      else
-        let scrutinee = Simple.var untagged_scrutinee in
-        let acc, body =
-          match Target_imm.Map.get_singleton arms with
-          | Some (_discriminant, action) ->
-            Expr_with_acc.create_apply_cont acc action
-          | None ->
-            Expr_with_acc.create_switch acc (Switch.create ~scrutinee ~arms)
-        in
-        Let_with_acc.create acc
-          (Bindable_let_bound.singleton untagged_scrutinee')
-          untag ~body ~free_names_of_body:Unknown
-        |> Expr_with_acc.create_let
-
-and close_named acc env ~let_bound_var (named : Ilambda.named)
+let close_named acc env ~let_bound_var (named : Ilambda.named)
       (k : Acc.t -> Named.t option -> Acc.t * Expr_with_acc.t)
   : Acc.t * Expr_with_acc.t =
   match named with
@@ -671,136 +477,209 @@ and close_named acc env ~let_bound_var (named : Ilambda.named)
     close_primitive acc env ~let_bound_var named prim ~args loc
       exn_continuation k
 
-and close_let_rec acc env ~defs ~body =
-  let env =
-    List.fold_right (fun (id, _) env ->
-        let env, _var = Env.add_var_like env id User_visible in
-        env)
-      defs env
+let close_let acc env id user_visible defining_expr
+    ~(body : Acc.t -> Env.t -> Acc.t * Expr_with_acc.t)
+    : Acc.t * Expr_with_acc.t =
+  let body_env, var = Env.add_var_like env id user_visible in
+  let cont acc (defining_expr : Named.t option) =
+    let body_env =
+      match defining_expr with
+      | Some (Simple simple) ->
+        Env.add_simple_to_substitute body_env id simple
+      | Some _ | None -> body_env
+    in
+    (* CR pchambart: Not tail ! *)
+    let acc, body = body acc body_env in
+    match defining_expr with
+    | None -> acc, body
+    | Some defining_expr ->
+      let var = VB.create var Name_mode.normal in
+      Let_with_acc.create acc (Bindable_let_bound.singleton var) defining_expr
+        ~body ~free_names_of_body:Unknown
+      |> Expr_with_acc.create_let
   in
-  let recursive_functions = Ilambda.recursive_functions defs in
-  let compilation_unit = Compilation_unit.get_current_exn () in
-  let function_declarations =
-    List.map (function (let_rec_ident,
-            ({ kind; return_continuation; exn_continuation;
-               params; return; body; free_idents_of_body;
-               attr; loc; stub;
-             } : Ilambda.function_declaration)) ->
-        let closure_id =
-          Closure_id.wrap compilation_unit
-            (Variable.create_with_same_name_as_ident let_rec_ident)
-        in
-        let recursive : Recursive.t =
-          if Ident.Set.mem let_rec_ident recursive_functions then
-            Recursive
-          else
-            Non_recursive
-        in
-        let function_declaration =
-          Function_decl.create ~let_rec_ident:(Some let_rec_ident)
-            ~closure_id ~kind ~params ~return ~return_continuation
-            ~exn_continuation ~body ~attr ~loc ~free_idents_of_body ~stub
-            recursive
-        in
-        function_declaration)
-      defs
-  in
-  let closure_vars =
-    List.fold_left (fun closure_vars decl ->
-        let closure_var =
-          VB.create (Env.find_var env (Function_decl.let_rec_ident decl))
-            Name_mode.normal
-        in
-        let closure_id = Function_decl.closure_id decl in
-        Closure_id.Map.add closure_id closure_var closure_vars)
-      Closure_id.Map.empty
-      function_declarations
-  in
-  let acc, set_of_closures =
-    close_functions acc env (Function_decls.create function_declarations)
-  in
-  (* CR mshinwell: We should maybe have something more elegant here *)
-  let generated_closures =
-    Closure_id.Set.diff
-      (Closure_id.Map.keys (Function_declarations.funs (
-        Set_of_closures.function_decls set_of_closures)))
-      (Closure_id.Map.keys closure_vars)
-  in
-  let closure_vars =
-    Closure_id.Set.fold (fun closure_id closure_vars ->
-        let closure_var =
-          VB.create (Variable.create "generated") Name_mode.normal
-        in
-        Closure_id.Map.add closure_id closure_var closure_vars)
-      generated_closures
-      closure_vars
-  in
-  let closure_vars =
-    List.map (fun (closure_id, _) ->
-        Closure_id.Map.find closure_id closure_vars)
-      (Function_declarations.funs_in_order (
-          Set_of_closures.function_decls set_of_closures)
-        |> Closure_id.Lmap.bindings)
-  in
-  let acc, body = close acc env body in
-  let named = Named.create_set_of_closures set_of_closures in
-  Let_with_acc.create acc
-    (Bindable_let_bound.set_of_closures ~closure_vars)
-    named
-    ~body ~free_names_of_body:Unknown
-  |> Expr_with_acc.create_let
+  close_named acc env ~let_bound_var:var defining_expr cont
 
-and close_functions acc external_env function_declarations =
-  let compilation_unit = Compilation_unit.get_current_exn () in
-  let var_within_closures_from_idents =
-    Ident.Set.fold (fun id map ->
-        (* Filter out predefined exception identifiers, since they will be
-           turned into symbols when we closure-convert the body. *)
-        if Ident.is_predef id then map
-        else
-          let var = Variable.create_with_same_name_as_ident id in
-          Ident.Map.add id (Var_within_closure.wrap compilation_unit var) map)
-      (Function_decls.all_free_idents function_declarations)
-      Ident.Map.empty
+let close_let_cont acc env ~name ~is_exn_handler ~params
+    ~(recursive : Asttypes.rec_flag)
+    ~(handler : Acc.t -> Env.t -> Acc.t * Expr_with_acc.t)
+    ~(body : Acc.t -> Env.t -> Acc.t * Expr_with_acc.t)
+    : Acc.t * Expr_with_acc.t =
+  if is_exn_handler then begin
+    match recursive with
+    | Nonrecursive -> ()
+    | Recursive ->
+      Misc.fatal_errorf "[Let_cont]s marked as exception handlers must \
+                         be [Nonrecursive]: %a"
+        Continuation.print name
+  end;
+  let params_with_kinds = params in
+  let handler_env, params =
+    Env.add_vars_like env
+      (List.map (fun (param, user_visible, _kind) -> param, user_visible)
+         params)
   in
-  let func_decl_list = Function_decls.to_list function_declarations in
-  let closure_ids_from_idents =
-    List.fold_left (fun map decl ->
-        let id = Function_decl.let_rec_ident decl in
-        let closure_id = Function_decl.closure_id decl in
-        Ident.Map.add id closure_id map)
-      Ident.Map.empty
-      func_decl_list
+  let params =
+    List.map2 (fun param (_, _, kind) ->
+        Kinded_parameter.create param (LC.value_kind kind))
+      params
+      params_with_kinds
   in
-  let acc, funs =
-    List.fold_left (fun (acc, by_closure_id) function_decl ->
-        let _, acc, expr =
-          Acc.measure_cost_metrics acc ~f:(fun acc ->
-            close_one_function acc ~external_env ~by_closure_id function_decl
-              ~var_within_closures_from_idents ~closure_ids_from_idents
-              function_declarations)
-        in
-        acc, expr)
-      (acc, Closure_id.Map.empty)
-      func_decl_list
+  let cost_metrics_of_handler, acc, handler =
+    Acc.measure_cost_metrics acc ~f:(fun acc ->
+        handler acc handler_env)
   in
-  (* CR lmaurer: funs has arbitrary order (ultimately coming from
-     function_declarations) *)
-  let funs =
-    Closure_id.Lmap.of_list (Closure_id.Map.bindings funs)
+  let acc, handler =
+    Continuation_handler_with_acc.create acc params ~handler
+      ~free_names_of_handler:Unknown
+      ~is_exn_handler
   in
-  let function_decls = Function_declarations.create funs in
-  let closure_elements =
-    Ident.Map.fold (fun id var_within_closure map ->
-        let external_var = find_simple_from_id external_env id in
-        Var_within_closure.Map.add var_within_closure external_var map)
-      var_within_closures_from_idents
-      Var_within_closure.Map.empty
-  in
-  acc,
-  Set_of_closures.create function_decls ~closure_elements
+  let acc, body = body acc env in
+  begin match recursive with
+  | Nonrecursive ->
+    Let_cont_with_acc.create_non_recursive acc name handler ~body
+      ~free_names_of_body:Unknown ~cost_metrics_of_handler
+  | Recursive ->
+    let handlers = Continuation.Map.singleton name handler in
+    Let_cont_with_acc.create_recursive acc handlers ~body
+      ~cost_metrics_of_handlers:cost_metrics_of_handler
+  end
 
-and close_one_function acc ~external_env ~by_closure_id decl
+let close_apply acc env ({ kind; func; args; continuation; exn_continuation;
+      loc; tailcall = _; inlined; specialised = _; } : Ilambda.apply)
+  : Acc.t * Expr_with_acc.t =
+  let acc, call_kind =
+    match kind with
+    | Function -> acc, Call_kind.indirect_function_call_unknown_arity ()
+    | Method { kind; obj; } ->
+      let acc, obj = find_simple acc env obj in
+      acc,
+      Call_kind.method_call (LC.method_kind kind) ~obj
+  in
+  let acc, exn_continuation =
+    close_exn_continuation acc env exn_continuation
+  in
+  let callee = find_simple_from_id env func in
+  let acc, args = find_simples acc env args in
+  let apply =
+    Apply.create ~callee
+      ~continuation:(Return continuation)
+      exn_continuation
+      ~args
+      ~call_kind
+      (Debuginfo.from_location loc)
+      ~inline:(LC.inline_attribute inlined)
+      ~inlining_state:(Inlining_state.default)
+  in
+  Expr_with_acc.create_apply acc apply
+
+let close_apply_cont acc env cont trap_action args
+  : Acc.t * Expr_with_acc.t =
+  let acc, args = find_simples acc env args in
+  let trap_action = close_trap_action_opt trap_action in
+  let apply_cont =
+    Apply_cont.create ?trap_action cont ~args ~dbg:Debuginfo.none
+  in
+  Expr_with_acc.create_apply_cont acc apply_cont
+
+let close_switch acc env scrutinee (sw : Ilambda.switch)
+  : Acc.t * Expr_with_acc.t =
+  let scrutinee = Simple.name (Env.find_name env scrutinee) in
+  let untagged_scrutinee = Variable.create "untagged" in
+  let untagged_scrutinee' =
+    VB.create untagged_scrutinee Name_mode.normal
+  in
+  let untag =
+    Named.create_prim
+      (Unary (Unbox_number Untagged_immediate, scrutinee))
+      Debuginfo.none
+  in
+  let acc, arms =
+    List.fold_left_map (fun acc (case, cont, trap_action, args) ->
+        let trap_action = close_trap_action_opt trap_action in
+        let acc, args = find_simples acc env args in
+        acc,
+        (Target_imm.int (Targetint.OCaml.of_int case),
+         Apply_cont.create ?trap_action cont ~args
+           ~dbg:Debuginfo.none))
+      acc
+      sw.consts
+  in
+  match arms, sw.failaction with
+  | [case, action], Some (default_action, default_trap_action, default_args)
+    when sw.numconsts >= 3 ->
+    (* Avoid enormous switches, where every arm goes to the same place
+       except one, that arise from single-arm [Lambda] switches with a
+       default case.  (Seen in code generated by ppx_compare for variants,
+       which exhibited quadratic size blowup.) *)
+    let compare =
+      Named.create_prim
+        (Binary (Phys_equal (Flambda_kind.naked_immediate, Eq),
+                 Simple.var untagged_scrutinee,
+                 Simple.const (Reg_width_const.naked_immediate case)))
+        Debuginfo.none
+    in
+    let comparison_result = Variable.create "eq" in
+    let comparison_result' = VB.create comparison_result Name_mode.normal in
+    let acc, default_action =
+      let acc, args = find_simples acc env default_args in
+      let trap_action = close_trap_action_opt default_trap_action in
+      acc,
+      Apply_cont.create ?trap_action default_action ~args
+        ~dbg:Debuginfo.none
+    in
+    let acc, switch =
+      let scrutinee = Simple.var comparison_result in
+      Expr_with_acc.create_switch acc (
+        Switch.if_then_else ~scrutinee
+          ~if_true:action
+          ~if_false:default_action)
+    in
+    let acc, body =
+      Let_with_acc.create acc (Bindable_let_bound.singleton comparison_result')
+        compare ~body:switch ~free_names_of_body:Unknown
+      |> Expr_with_acc.create_let
+    in
+    Let_with_acc.create acc (Bindable_let_bound.singleton untagged_scrutinee')
+      untag ~body ~free_names_of_body:Unknown
+    |> Expr_with_acc.create_let
+  | _, _ ->
+    let acc, arms =
+      match sw.failaction with
+      | None -> acc, Target_imm.Map.of_list arms
+      | Some (default, trap_action, args) ->
+        Numbers.Int.Set.fold (fun case (acc, cases) ->
+            let case = Target_imm.int (Targetint.OCaml.of_int case) in
+            if Target_imm.Map.mem case cases then acc, cases
+            else
+              let acc, args = find_simples acc env args in
+              let trap_action = close_trap_action_opt trap_action in
+              let default =
+                Apply_cont.create ?trap_action default ~args
+                  ~dbg:Debuginfo.none
+              in
+              acc,
+              Target_imm.Map.add case default cases)
+          (Numbers.Int.zero_to_n (sw.numconsts - 1))
+          (acc, Target_imm.Map.of_list arms)
+    in
+    if Target_imm.Map.is_empty arms then
+      Expr_with_acc.create_invalid acc ()
+    else
+      let scrutinee = Simple.var untagged_scrutinee in
+      let acc, body =
+        match Target_imm.Map.get_singleton arms with
+        | Some (_discriminant, action) ->
+          Expr_with_acc.create_apply_cont acc action
+        | None ->
+          Expr_with_acc.create_switch acc (Switch.create ~scrutinee ~arms)
+      in
+      Let_with_acc.create acc
+        (Bindable_let_bound.singleton untagged_scrutinee')
+        untag ~body ~free_names_of_body:Unknown
+      |> Expr_with_acc.create_let
+
+let close_one_function acc ~external_env ~by_closure_id decl
       ~var_within_closures_from_idents ~closure_ids_from_idents
       function_declarations =
   let acc = Acc.with_free_names Name_occurrences.empty acc in
@@ -905,17 +784,17 @@ and close_one_function acc ~external_env ~by_closure_id decl
       param_vars
   in
   let acc, body =
-    try close acc closure_env body
+    try body acc closure_env
     with Misc.Fatal_error -> begin
       if !Clflags.flambda_context_on_error then begin
         Format.eprintf "\n%sContext is:%s closure converting \
-          function@ with [our_let_rec_ident] %a (closure ID %a)@ \
-          and body:@ %a"
+          function@ with [our_let_rec_ident] %a (closure ID %a)"(* @ \ *)
+          (* and body:@ %a *)
           (Flambda_colours.error ())
           (Flambda_colours.normal ())
           Ident.print our_let_rec_ident
           Closure_id.print closure_id
-          Ilambda.print body
+          (* Ilambda.print body *)
       end;
       raise Misc.Fatal_error
     end
@@ -1034,6 +913,158 @@ and close_one_function acc ~external_env ~by_closure_id decl
   in
   Acc.add_code ~code_id ~code acc,
   Closure_id.Map.add my_closure_id fun_decl by_closure_id
+
+let close_functions acc external_env function_declarations =
+  let compilation_unit = Compilation_unit.get_current_exn () in
+  let var_within_closures_from_idents =
+    Ident.Set.fold (fun id map ->
+        (* Filter out predefined exception identifiers, since they will be
+           turned into symbols when we closure-convert the body. *)
+        if Ident.is_predef id then map
+        else
+          let var = Variable.create_with_same_name_as_ident id in
+          Ident.Map.add id (Var_within_closure.wrap compilation_unit var) map)
+      (Function_decls.all_free_idents function_declarations)
+      Ident.Map.empty
+  in
+  let func_decl_list = Function_decls.to_list function_declarations in
+  let closure_ids_from_idents =
+    List.fold_left (fun map decl ->
+        let id = Function_decl.let_rec_ident decl in
+        let closure_id = Function_decl.closure_id decl in
+        Ident.Map.add id closure_id map)
+      Ident.Map.empty
+      func_decl_list
+  in
+  let acc, funs =
+    List.fold_left (fun (acc, by_closure_id) function_decl ->
+        let _, acc, expr =
+          Acc.measure_cost_metrics acc ~f:(fun acc ->
+            close_one_function acc ~external_env ~by_closure_id function_decl
+              ~var_within_closures_from_idents ~closure_ids_from_idents
+              function_declarations)
+        in
+        acc, expr)
+      (acc, Closure_id.Map.empty)
+      func_decl_list
+  in
+  (* CR lmaurer: funs has arbitrary order (ultimately coming from
+     function_declarations) *)
+  let funs =
+    Closure_id.Lmap.of_list (Closure_id.Map.bindings funs)
+  in
+  let function_decls = Function_declarations.create funs in
+  let closure_elements =
+    Ident.Map.fold (fun id var_within_closure map ->
+        let external_var = find_simple_from_id external_env id in
+        Var_within_closure.Map.add var_within_closure external_var map)
+      var_within_closures_from_idents
+      Var_within_closure.Map.empty
+  in
+  acc,
+  Set_of_closures.create function_decls ~closure_elements
+
+let close_let_rec acc env ~function_declarations
+  ~(body : Acc.t -> Env.t -> Acc.t * Expr_with_acc.t) =
+  let env =
+    List.fold_right (fun decl env ->
+        let id = Function_decl.let_rec_ident decl in
+        let env, _var = Env.add_var_like env id User_visible in
+        env)
+      function_declarations env
+  in
+  let closure_vars =
+    List.fold_left (fun closure_vars decl ->
+        let closure_var =
+          VB.create (Env.find_var env (Function_decl.let_rec_ident decl))
+            Name_mode.normal
+        in
+        let closure_id = Function_decl.closure_id decl in
+        Closure_id.Map.add closure_id closure_var closure_vars)
+      Closure_id.Map.empty
+      function_declarations
+  in
+  let acc, set_of_closures =
+    close_functions acc env (Function_decls.create function_declarations)
+  in
+  (* CR mshinwell: We should maybe have something more elegant here *)
+  let generated_closures =
+    Closure_id.Set.diff
+      (Closure_id.Map.keys (Function_declarations.funs (
+        Set_of_closures.function_decls set_of_closures)))
+      (Closure_id.Map.keys closure_vars)
+  in
+  let closure_vars =
+    Closure_id.Set.fold (fun closure_id closure_vars ->
+        let closure_var =
+          VB.create (Variable.create "generated") Name_mode.normal
+        in
+        Closure_id.Map.add closure_id closure_var closure_vars)
+      generated_closures
+      closure_vars
+  in
+  let closure_vars =
+    List.map (fun (closure_id, _) ->
+        Closure_id.Map.find closure_id closure_vars)
+      (Function_declarations.funs_in_order (
+          Set_of_closures.function_decls set_of_closures)
+        |> Closure_id.Lmap.bindings)
+  in
+  let acc, body = body acc env in
+  let named = Named.create_set_of_closures set_of_closures in
+  Let_with_acc.create acc
+    (Bindable_let_bound.set_of_closures ~closure_vars)
+    named
+    ~body ~free_names_of_body:Unknown
+  |> Expr_with_acc.create_let
+
+let rec close acc env (ilam : Ilambda.t) : Acc.t * Expr_with_acc.t =
+  match ilam with
+  | Let (id, user_visible, _kind, defining_expr, body) ->
+    (* CR mshinwell: Remove [kind] on the Ilambda terms? *)
+    close_let acc env id user_visible defining_expr
+      ~body:(fun acc env -> close acc env body)
+  | Let_rec (defs, body) ->
+    let function_declarations =
+      let compilation_unit = Compilation_unit.get_current_exn () in
+      let recursive_functions = Ilambda.recursive_functions defs in
+      List.map (function (let_rec_ident,
+          ({ kind; return_continuation; exn_continuation;
+             params; return; body; free_idents_of_body;
+             attr; loc; stub;
+           } : Ilambda.function_declaration)) ->
+            let closure_id =
+              Closure_id.wrap compilation_unit
+                (Variable.create_with_same_name_as_ident let_rec_ident)
+            in
+            let recursive : Recursive.t =
+              if Ident.Set.mem let_rec_ident recursive_functions then
+                Recursive
+              else
+                Non_recursive
+            in
+            let contains_closures = Ilambda.contains_closures body in
+            let function_declaration =
+              Function_decl.create ~let_rec_ident:(Some let_rec_ident)
+                ~closure_id ~kind ~params ~return ~return_continuation
+                ~exn_continuation ~body:(fun acc env -> close acc env body)
+                ~attr ~loc ~free_idents_of_body ~stub
+                recursive ~contains_closures
+            in
+            function_declaration)
+        defs
+    in
+    close_let_rec acc env ~function_declarations
+      ~body:(fun acc env -> close acc env body)
+  | Let_cont { name; is_exn_handler; params; recursive; body; handler } ->
+    close_let_cont acc env ~name ~is_exn_handler ~params ~recursive
+      ~body:(fun acc env -> close acc env body)
+      ~handler:(fun acc env -> close acc env handler)
+  | Apply apply -> close_apply acc env apply
+  | Apply_cont (cont, trap_action, args) ->
+    close_apply_cont acc env cont trap_action args
+  | Switch (scrutinee, switch) -> close_switch acc env scrutinee switch
+
 
 let ilambda_to_flambda ~backend ~module_ident ~module_block_size_in_words
       (ilam : Ilambda.program) =
