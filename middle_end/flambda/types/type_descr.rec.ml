@@ -339,6 +339,46 @@ module Make (Head : Type_head_intf.S
     let typing_env = Meet_env.env env in
     let head1 = expand_head ~force_to_kind t1 typing_env kind in
     let head2 = expand_head ~force_to_kind t2 typing_env kind in
+    let print_canon ppf t =
+      match TE.get_alias_then_canonical_simple_exn typing_env (to_type t) with
+      | exception Not_found -> Format.pp_print_string ppf "<non-alias>"
+      | simple -> Simple.print ppf simple
+    in
+    let print_type_and_ext ppf (ty, tee) =
+      Format.fprintf ppf "@[<hov 1>%a@ with %a@]"
+        Type_grammar.print ty
+        Typing_env_extension.print tee
+    in
+    if Type_grammar.tracing_meets () && !Clflags.dump_rawflambda then begin
+      Format.eprintf
+        "@[<hov 1>Type_descr.meet:@ \
+         @[<hov 1>%a@ ∧ %a@]@ ≃ \
+         @[<hov 1>%a@ ∧ %a@]@ ↦ \
+         @[<hov 1>%a@ ∧ %a@]@ = ...@]@.%!"
+        Type_grammar.print ty1
+        Type_grammar.print ty2
+        print t1
+        print t2
+        print_canon t1
+        print_canon t2
+    end;
+    (fun ans ->
+      if Type_grammar.tracing_meets () && !Clflags.dump_rawflambda then begin
+        Format.eprintf
+          "@[<hov 1>Type_descr.meet:@ \
+          @[<hov 1>%a@ ∧ %a@]@ ≃ \
+          @[<hov 1>%a@ ∧ %a@]@ ↦ \
+          @[<hov 1>%a@ ∧ %a@]@ = %a@]@.%!"
+          Type_grammar.print ty1
+          Type_grammar.print ty2
+          print t1
+          print t2
+          print_canon t1
+          print_canon t2
+          (Or_bottom.print print_type_and_ext) ans
+      end;
+      ans
+    ) @@ (begin
     match
       TE.get_alias_then_canonical_simple_exn typing_env (to_type t1)
         ~min_name_mode:Name_mode.in_types
@@ -450,6 +490,7 @@ module Make (Head : Type_head_intf.S
             | Unknown | Ok _ ->
               Ok (to_type (create_equals simple1), env_extension)
         end
+end : _ Or_bottom.t)
 
   let join ?bound_name ~force_to_kind ~to_type join_env kind _ty1 _ty2 t1 t2
     : _ Or_unknown.t =

@@ -123,7 +123,14 @@ let create_switch are_rebuilding switch =
   if ART.do_not_rebuild_terms are_rebuilding then Lazy.force invalid
   else Expr.create_switch switch
 
-let create_invalid () = Lazy.force invalid
+let create_invalid () =
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf
+      "@[<hov 1>create_invalid@ \
+       @[<hov 1>backtrace: %s@]@]@.%!"
+      (Printexc.raw_backtrace_to_string (Printexc.get_callstack 10))
+  end;
+  Lazy.force invalid
 
 let bind_no_simplification are_rebuilding ~bindings ~body
       ~cost_metrics_of_body ~free_names_of_body =

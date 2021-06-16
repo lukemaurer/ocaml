@@ -91,11 +91,27 @@ let is_self_tail_call dacc apply =
 
 let simplify_projection dacc ~original_term ~deconstructing ~shape ~result_var
       ~result_kind =
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf
+      "@[<hov 1>simplify_projection@ \
+       @[<hov 1>(original_term@ %a)@]@ \
+       @[<hov 1>(deconstructing@ %a)@]@ \
+       @[<hov 1>(shape@ %a)@]@ \
+       @[<hov 1>(result_var@ %a)@]@ \
+       @[<hov 1>(result_kind@ %a)@]@]@.%!"
+      Named.print original_term
+      T.print deconstructing
+      T.print shape
+      Var_in_binding_pos.print result_var
+      K.print result_kind
+  end;
+  T.with_tracing_meets begin fun () ->
   let env = DA.typing_env dacc in
   match T.meet_shape env deconstructing ~shape ~result_var ~result_kind with
   | Bottom -> Simplified_named.invalid (), TEE.empty (), dacc
   | Ok env_extension ->
     Simplified_named.reachable original_term, env_extension, dacc
+end
 
 let update_exn_continuation_extra_args uacc ~exn_cont_use_id apply =
   let exn_cont_rewrite =

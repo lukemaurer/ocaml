@@ -847,8 +847,8 @@ and close_one_function acc ~external_env ~by_closure_id decl
   in
   let coerce_to_deeper =
     Coercion.change_depth
-      ~from:(Depth_variable.Or_zero.var my_depth)
-      ~to_:(Depth_variable.Or_zero.var next_depth)
+      ~from:(Rec_info_expr.var my_depth)
+      ~to_:(Rec_info_expr.var next_depth)
   in
   (* CR mshinwell: Remove "project_closure" names *)
   let project_closure_to_bind, var_for_project_closure, simple_for_project_closure =

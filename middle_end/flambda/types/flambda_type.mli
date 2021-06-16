@@ -220,6 +220,8 @@ module Typing_env : sig
   end
 end
 
+val with_tracing_meets : (unit -> 'a) -> 'a
+
 val meet : Typing_env.t -> t -> t -> (t * Typing_env_extension.t) Or_bottom.t
 
 val meet_shape
@@ -248,9 +250,11 @@ module Function_declaration_type : sig
 
     val code_id : t -> Code_id.t
     val dbg : t -> Debuginfo.t
-    val rec_info : t -> Depth_variable.Or_zero.t Or_unknown.t
+    val rec_info : t -> flambda_type
     val is_tupled : t -> bool
     val must_be_inlined : t -> bool
+
+    val print : Format.formatter -> t -> unit
   end
 
   module Non_inlinable : sig
@@ -258,6 +262,8 @@ module Function_declaration_type : sig
 
     val code_id : t -> Code_id.t
     val is_tupled : t -> bool
+
+    val print : Format.formatter -> t -> unit
   end
 
   type t0 = private
@@ -265,6 +271,8 @@ module Function_declaration_type : sig
     | Non_inlinable of Non_inlinable.t
 
   type t = t0 Or_unknown_or_bottom.t
+
+  val print : Format.formatter -> t -> unit
 end
 
 module Closures_entry : sig
@@ -422,7 +430,7 @@ val mutable_string : size:int -> t
 val create_inlinable_function_declaration
    : code_id:Code_id.t
   -> dbg:Debuginfo.t
-  -> rec_info:Depth_variable.Or_zero.t Or_unknown.t
+  -> rec_info:t
   -> is_tupled:bool
   -> must_be_inlined:bool
   -> Function_declaration_type.t

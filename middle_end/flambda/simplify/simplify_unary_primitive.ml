@@ -85,6 +85,11 @@ let simplify_project_var closure_id closure_element ~min_name_mode dacc
     let env_extension = TEE.one_equation (Name.var result_var') ty in
     Simplified_named.invalid (), env_extension, dacc
   | Proved simple ->
+    let simple =
+      Simplify_simple.simplify_simple dacc simple
+        ~min_name_mode:Name_mode.normal
+      |> T.get_alias_exn
+    in
     let reachable = Simplified_named.reachable (Named.create_simple simple) in
     let env_extension =
       TEE.one_equation (Name.var result_var')

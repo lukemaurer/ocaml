@@ -187,6 +187,8 @@ MIDDLE_END_FLAMBDA_COMPILENV_DEPS=\
   middle_end/flambda/compilenv_deps/flambda_colours.cmo \
   middle_end/flambda/compilenv_deps/compilation_unit.cmo \
   middle_end/flambda/compilenv_deps/depth_variable0.cmo \
+  middle_end/flambda/compilenv_deps/or_infinity.cmo \
+  middle_end/flambda/compilenv_deps/rec_info_expr0.cmo \
   middle_end/flambda/compilenv_deps/coercion0.cmo \
   middle_end/flambda/compilenv_deps/reg_width_things.cmo \
   middle_end/flambda/compilenv_deps/symbol.cmo \
@@ -212,6 +214,7 @@ MIDDLE_END_FLAMBDA_BASIC=\
   middle_end/flambda/naming/name_occurrences.cmo \
   middle_end/flambda/types/basic/unit.cmo \
   middle_end/flambda/basic/or_variable.cmo \
+  middle_end/flambda/terms/rec_info_expr.cmo \
   middle_end/flambda/basic/coercion.cmo \
   middle_end/flambda/basic/simple.cmo \
   middle_end/flambda/basic/closure_id.cmo \
@@ -239,8 +242,7 @@ MIDDLE_END_FLAMBDA_BASIC=\
   middle_end/flambda/basic/continuation_extra_params_and_args.cmo \
   middle_end/flambda/basic/symbol_scoping_rule.cmo \
   middle_end/flambda/basic/or_deleted.cmo \
-  middle_end/flambda/terms/symbol_projection.cmo \
-  middle_end/flambda/basic/or_infinity.cmo
+  middle_end/flambda/terms/symbol_projection.cmo
 
 MIDDLE_END_FLAMBDA_NAMING=\
   middle_end/flambda/naming/contains_names.cmo \
@@ -266,7 +268,6 @@ MIDDLE_END_FLAMBDA_TYPES=\
   middle_end/flambda/types/basic/or_bottom.cmo \
   middle_end/flambda/types/basic/string_info.cmo \
   middle_end/flambda/types/basic/or_unknown_or_bottom.cmo \
-  middle_end/flambda/terms/rec_info_expr.cmo \
   middle_end/flambda/types/structures/code_age_relation.cmo \
   middle_end/flambda/types/structures/type_structure_intf.cmo \
   middle_end/flambda/types/structures/product_intf.cmo \
@@ -332,6 +333,7 @@ MIDDLE_END_FLAMBDA_SIMPLIFY=\
   middle_end/flambda/inlining/inlining_transforms.cmo \
   middle_end/flambda/inlining/inlining_decision.cmo \
   middle_end/flambda/inlining/inlining_report.cmo \
+  middle_end/flambda/simplify/simplify_coercion.cmo \
   middle_end/flambda/simplify/simplify_simple.cmo \
   middle_end/flambda/simplify/simplify_import.cmo \
   middle_end/flambda/simplify/basic/simplify_named_result.cmo \

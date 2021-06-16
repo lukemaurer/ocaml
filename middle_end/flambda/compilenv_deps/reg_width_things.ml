@@ -481,7 +481,9 @@ module Name = struct
   module Tbl = Identifiable.Make_tbl (Numbers.Int) (Map)
 end
 
-module Coercion = Coercion0.Make(Depth_variable)
+module Rec_info_expr = Rec_info_expr0.Make(Depth_variable)
+
+module Coercion = Coercion0.Make(Rec_info_expr)
 
 module Simple_data = struct
   type t = {

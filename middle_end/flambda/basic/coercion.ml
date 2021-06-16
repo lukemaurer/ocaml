@@ -16,22 +16,35 @@
 
 include Reg_width_things.Coercion
 
-let free_names_with_mode t mode =
+let print_with_cache ~cache:_ ppf t = print ppf t
+
+let free_names t =
   match t with
   | Id -> Name_occurrences.empty
   | Change_depth { from; to_ } ->
-    let add (dv : Depth_variable.Or_zero.t) names =
-      match dv with
-      | Zero -> names
-      | Var dv ->
-        Name_occurrences.add_variable names (Depth_variable.var dv) mode
-    in
-    Name_occurrences.empty |> add from |> add to_
+    Name_occurrences.union
+      (Rec_info_expr.free_names from)
+      (Rec_info_expr.free_names to_)
 
-let free_names t = free_names_with_mode t Name_mode.normal
-let free_names_in_types t = free_names_with_mode t Name_mode.in_types
+let free_names_in_types t =
+  match t with
+  | Id -> Name_occurrences.empty
+  | Change_depth { from; to_ } ->
+    Name_occurrences.union
+      (Rec_info_expr.free_names_in_types from)
+      (Rec_info_expr.free_names_in_types to_)
 
 let apply_renaming t renaming =
-  map_depth_variables t ~f:(fun dv ->
-      Renaming.apply_variable renaming (Depth_variable.var dv)
-      |> Depth_variable.of_var)
+  match t with
+  | Id -> t
+  | Change_depth { from; to_  } ->
+    let new_from = Rec_info_expr.apply_renaming from renaming in
+    let new_to_ = Rec_info_expr.apply_renaming to_ renaming in
+    if new_from == from && new_to_ == to_ then t else
+      change_depth ~from:new_from ~to_:new_to_
+
+let compose_exn t1 ~then_:t2 =
+  match compose t1 ~then_:t2 with
+  | Some t -> t
+  | None ->
+    Misc.fatal_errorf "Invalid composition: %a@ >>@ %a" print t1 print t2

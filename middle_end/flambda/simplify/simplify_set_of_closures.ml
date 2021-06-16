@@ -171,10 +171,10 @@ end = struct
                   Code_id.Map.find (FD.code_id function_decl)
                     old_to_new_code_ids_all_sets
                 in
-                let rec_info : _ Or_unknown.t =
+                let rec_info =
                   (* In its own body, every function has an unknown recursion
                      depth *)
-                  Unknown
+                  T.unknown K.rec_info
                 in
                 function_decl_type
                   ~pass:Inlining_report.Before_simplify
@@ -275,39 +275,6 @@ end = struct
 	 term and not knowing it prohibits us from inlining it.*)
       |> DE.set_rebuild_terms
     in
-    let free_depth_variables =
-      List.map (fun set_of_closures ->
-        let vars = Set_of_closures.free_names set_of_closures in
-        Name_occurrences.fold_variables vars ~init:Depth_variable.Set.empty
-          ~f:(fun free_depth_variables var ->
-            let ty = DE.find_variable denv var in
-            match T.kind ty with
-            | Rec_info ->
-              Depth_variable.Set.add (Depth_variable.of_var var) free_depth_variables
-            | Value | Naked_number _ | Fabricated -> free_depth_variables
-          )) all_sets_of_closures
-      |> Depth_variable.Set.union_list
-    in
-    (* Pretend that any depth variables appearing free in the closure elements
-       are bound to "never inline anything" in the function. This causes them to
-       be skipped over by [make_suitable_for_environment], thus avoiding dealing
-       with in-types depth variables ending up in terms. *)
-    (* CR lmaurer: It would be better to propagate depth variables into closures
-       properly, as this would allow things like unrolling [Seq.map] where the
-       recursive call goes through a closure. For the moment, we just stop
-       unrolling cold in that situation. (It's important that we use
-       [Rec_info_expr.do_not_inline] here so that we don't start unrolling,
-       since without propagating the rec info into the closure, we don't know
-       when to stop unrolling.) *)
-    let denv_inside_functions =
-      Depth_variable.Set.fold (fun dv denv_inside_functions ->
-          let var_in_binding_pos =
-            Var_in_binding_pos.create (Depth_variable.var dv) Name_mode.normal
-          in
-          DE.add_variable denv_inside_functions var_in_binding_pos
-            (T.this_rec_info Rec_info_expr.do_not_inline)
-        ) free_depth_variables denv_inside_functions
-    in
     let env_inside_functions,
         closure_element_types_all_sets_inside_functions_rev =
       List.fold_left
@@ -327,6 +294,64 @@ end = struct
     in
     let closure_element_types_inside_functions_all_sets =
       List.rev closure_element_types_all_sets_inside_functions_rev
+    in
+    let free_depth_variables =
+      List.concat_map (fun closure_element_types ->
+          List.map (fun (vwc, ty) ->
+              let vars =
+                try
+                  TE.free_names_transitive (DE.typing_env denv) ty
+                with
+                | e ->
+                  Format.eprintf "@[<hov 1>I@ blame@ %a@ = %a,@ myself@]@.%!"
+                    Var_within_closure.print vwc
+                    Flambda_type.print ty;
+                  raise e
+              in
+              Name_occurrences.fold_variables vars ~init:Depth_variable.Set.empty
+                ~f:(fun free_depth_variables var ->
+                    let ty = TE.find env_inside_functions (Name.var var) None in
+                    match T.kind ty with
+                    | Rec_info ->
+                      Depth_variable.Set.add (Depth_variable.of_var var)
+                        free_depth_variables
+                    | Value | Naked_number _ | Fabricated -> free_depth_variables
+                  )
+            ) (closure_element_types |> Var_within_closure.Map.bindings)
+        ) closure_element_types_all_sets
+      |> Depth_variable.Set.union_list
+    in
+    if !Clflags.dump_rawflambda && not (closure_element_types_inside_functions_all_sets == [])
+    then begin
+      Format.eprintf
+        "@[<hov 1>closure_element_types_inside_functions_all_sets@ %a@]@.\
+         @[<hov 1>free_depth_variables@ %a@]@.%!"
+        (Format.pp_print_list (Var_within_closure.Map.print Flambda_type.print))
+          closure_element_types_inside_functions_all_sets
+        Depth_variable.Set.print free_depth_variables
+    end;
+    (* Pretend that any depth variables appearing free in the closure elements
+       are bound to "never inline anything" in the function. This causes them to
+       be skipped over by [make_suitable_for_environment], thus avoiding dealing
+       with in-types depth variables ending up in terms. *)
+    (* CR lmaurer: It would be better to propagate depth variables into closures
+       properly, as this would allow things like unrolling [Seq.map] where the
+       recursive call goes through a closure. For the moment, we just stop
+       unrolling cold in that situation. (It's important that we use
+       [Rec_info_expr.do_not_inline] here so that we don't start unrolling,
+       since without propagating the rec info into the closure, we don't know
+       when to stop unrolling.) *)
+    let env_inside_functions =
+      Depth_variable.Set.fold (fun dv env_inside_functions ->
+          let name = Name.var (Depth_variable.var dv) in
+          let env_inside_functions =
+            TE.add_definition env_inside_functions
+              (Name_in_binding_pos.create name Name_mode.normal)
+              K.rec_info
+          in
+          TE.add_equation env_inside_functions name
+            (T.this_rec_info Rec_info_expr.do_not_inline)
+        ) free_depth_variables env_inside_functions
     in
     let old_to_new_code_ids_all_sets =
       compute_old_to_new_code_ids_all_sets ~all_sets_of_closures
@@ -593,10 +618,10 @@ let simplify_function context ~used_closure_vars ~shareable_constants
           ~code_id:new_code_id
           ~is_tupled:(FD.is_tupled function_decl)
       else
-        let rec_info : Depth_variable.Or_zero.t Or_unknown.t =
+        let rec_info =
           (* This is the intrinsic type of the function as seen outside its
              own scope, so its [Rec_info] says its depth is zero *)
-          Known Depth_variable.Or_zero.zero
+          T.this_rec_info Rec_info_expr.initial
         in
         (* We need to manually specify the cost metrics to use to ensure that
            they are the one of the body after simplification. *)
@@ -607,7 +632,9 @@ let simplify_function context ~used_closure_vars ~shareable_constants
           rec_info
     in
     if !Clflags.dump_rawflambda then begin
-      Format.eprintf "@[<hov 1>DONE@ %a@]@.%!" Code_id.print code_id
+      Format.eprintf "@[<hov 1>DONE@ %a@ %a@]@.%!"
+        Code_id.print code_id
+        Rebuilt_static_const.print code
     end;
     { function_decl;
       new_code_id;
@@ -972,6 +999,9 @@ let type_closure_elements_and_make_lifting_decision_for_one_set dacc
       (Var_within_closure.Map.empty, Var_within_closure.Map.empty,
        Variable.Map.empty)
   in
+  let can_lift_coercion coercion =
+    Name_occurrences.no_variables (Coercion.free_names coercion)
+  in
   (* Note that [closure_bound_vars_inverse] doesn't need to include
      variables binding closures in other mutually-recursive sets, since if
      we get here in the case where we are considering lifting a set that has
@@ -980,6 +1010,8 @@ let type_closure_elements_and_make_lifting_decision_for_one_set dacc
   let can_lift =
     Var_within_closure.Map.for_all
       (fun _ simple ->
+        can_lift_coercion (Simple.coercion simple)
+        &&
         Simple.pattern_match' simple
           ~const:(fun _ -> true)
           ~symbol:(fun _ ~coercion:_ -> true)

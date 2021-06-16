@@ -13,7 +13,7 @@
 (*                                                                        *)
 (**************************************************************************)
 
-module Simple = Reg_width_things.Simple
+module Simple := Reg_width_things.Simple
 
 type t = private {
   symbols : Symbol.Set.t;

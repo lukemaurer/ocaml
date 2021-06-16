@@ -14,19 +14,60 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-module Make(Depth_variable : Depth_variable0.S) = struct
+module type S = sig
+  type depth_variable
+  type rec_info_expr
+
+  type t = private
+    | Id
+    | Change_depth of {
+        from : rec_info_expr;
+        to_ : rec_info_expr;
+      }
+
+  val change_depth
+    : from:rec_info_expr
+    -> to_:rec_info_expr
+    -> t
+
+  val id : t
+
+  val is_id : t -> bool
+
+  val inverse : t -> t
+
+  val compose : t -> then_:t -> t option
+
+  val print : Format.formatter -> t -> unit
+
+  val equal : t -> t -> bool
+
+  val hash : t -> int
+
+  val map_depth_variables : t -> f:(depth_variable -> depth_variable) -> t
+end
+
+module Make(Rec_info_expr : Rec_info_expr0.S)
+  : S with type depth_variable = Rec_info_expr.depth_variable
+       and type rec_info_expr = Rec_info_expr.t
+= struct
+  type depth_variable = Rec_info_expr.depth_variable
+  type rec_info_expr = Rec_info_expr.t
+
   type t =
     | Id
     | Change_depth of {
-        from : Depth_variable.Or_zero.t;
-        to_ : Depth_variable.Or_zero.t;
+        from : rec_info_expr;
+        to_ : rec_info_expr;
       }
 
   let id = Id
 
   let change_depth ~from ~to_ =
-    if Depth_variable.Or_zero.equal from to_ then Id
-    else Change_depth { from; to_ }
+    (* The special case here is actually very common; it appears, for instance,
+       when something gets composed when its own inverse, which happens often
+       in the back-and-forth in [Typing_env.add_equation] for instance *)
+    if from == to_ then Id else Change_depth { from; to_ }
 
   let is_id = function
     | Id -> true
@@ -35,18 +76,6 @@ module Make(Depth_variable : Depth_variable0.S) = struct
   let inverse = function
     | Id -> Id
     | Change_depth { from; to_ } -> Change_depth { from = to_; to_ = from }
-
-  let print ppf = function
-    | Id ->
-      Format.fprintf ppf "@<0>%sid@<0>%s"
-        (Flambda_colours.elide ())
-        (Flambda_colours.normal ())
-    | Change_depth { from; to_; } ->
-      Format.fprintf ppf "@<0>%s@[<hov 1>(depth@ %a ->@ %a)@]@<0>%s"
-        (Flambda_colours.coercion ())
-        Depth_variable.Or_zero.print from
-        Depth_variable.Or_zero.print to_
-        (Flambda_colours.normal ())
 
   let compose t1 ~then_:t2 =
     match t1, t2 with
@@ -62,19 +91,29 @@ module Make(Depth_variable : Depth_variable0.S) = struct
       ignore (to_1, from2);
       Some (change_depth ~from:from1 ~to_:to_2)
 
-  let compose_exn t1 ~then_:t2 =
-    match compose t1 ~then_:t2 with
-    | Some t -> t
-    | None ->
-      Misc.fatal_errorf "Invalid composition: %a@ >>@ %a" print t1 print t2
+  let print ppf = function
+    | Id ->
+      Format.fprintf ppf "@<0>%sid@<0>%s"
+        (Flambda_colours.elide ())
+        (Flambda_colours.normal ())
+    | Change_depth { from; to_; } ->
+      Format.fprintf ppf "@<0>%s@[<hov 1>(depth@ %a@<0>%s ->@ %a@<0>%s)@]@<0>%s"
+        (Flambda_colours.coercion ())
+        Rec_info_expr.print from
+        (Flambda_colours.coercion ())
+        Rec_info_expr.print to_
+        (Flambda_colours.coercion ())
+        (Flambda_colours.normal ())
 
   let equal t1 t2 =
+    t1 == t2
+    ||
     match t1, t2 with
     | Id, Id -> true
     | Change_depth { from = from1; to_ = to_1 },
       Change_depth { from = from2; to_ = to_2 } ->
-      Depth_variable.Or_zero.equal from1 from2 &&
-      Depth_variable.Or_zero.equal to_1 to_2
+      Rec_info_expr.equal from1 from2 &&
+      Rec_info_expr.equal to_1 to_2
     | (Id | Change_depth _), _ -> false
 
   let hash = function
@@ -82,14 +121,14 @@ module Make(Depth_variable : Depth_variable0.S) = struct
       Hashtbl.hash 0
     | Change_depth { from; to_ } ->
       Hashtbl.hash
-        (1, Depth_variable.Or_zero.hash from, Depth_variable.Or_zero.hash to_)
+        (1, Rec_info_expr.hash from, Rec_info_expr.hash to_)
 
   let map_depth_variables t ~f =
     match t with
     | Id -> t
     | Change_depth { from = old_from; to_ = old_to } ->
-      let new_from = Depth_variable.Or_zero.map_var ~f old_from in
-      let new_to = Depth_variable.Or_zero.map_var ~f old_to in
+      let new_from = Rec_info_expr.map_depth_variables ~f old_from in
+      let new_to = Rec_info_expr.map_depth_variables ~f old_to in
       if new_from == old_from && new_to == old_to then t else
         change_depth ~from:new_from ~to_: new_to
 end

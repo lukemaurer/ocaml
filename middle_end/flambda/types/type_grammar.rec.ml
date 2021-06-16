@@ -765,7 +765,12 @@ let type_for_const const =
 
 let kind_for_const const = kind (type_for_const const)
 
-let this_rec_info rec_info_expr = Rec_info (T_RI.create rec_info_expr)
+let this_rec_info (rec_info_expr : Rec_info_expr.t) =
+  match rec_info_expr with
+  | Var dv ->
+    Rec_info (T_RI.create_equals (Simple.var (Depth_variable.var dv)))
+  | Const _ | Succ _ | Unroll_to _ ->
+    Rec_info (T_RI.create rec_info_expr)
 
 let expand_head t env : Resolved_type.t =
   match t with
@@ -931,7 +936,32 @@ let make_suitable_for_environment t env ~suitable_for ~bind_to =
   let level = TEEV.add_or_replace_equation level bind_to t in
   level
 
+let tracing_meets_is_on = ref false
+
+let tracing_meets () = !tracing_meets_is_on
+
+let with_tracing_meets f = Misc.protect_refs [R (tracing_meets_is_on, true)] f
+
 let meet env t1 t2 =
+  if tracing_meets () && !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>meet: %a@ ∧ %a@ = ...@]@.%!"
+      print t1
+      print t2
+  end;
+  let print_type_and_ext ppf (ty, tee) =
+    Format.fprintf ppf "@[<hov 1>%a@ with %a@]"
+      print ty
+      Typing_env_extension.print tee
+  in
+  (fun ans ->
+    if tracing_meets () && !Clflags.dump_rawflambda then begin
+      Format.eprintf "@[<hov 1>meet: %a@ ∧ %a@ = %a@]@.%!"
+        print t1
+        print t2
+        (Or_bottom.print print_type_and_ext) ans
+    end;
+    ans
+  ) @@
   match t1, t2 with
   | Value ty1, Value ty2 ->
     T_V.meet env

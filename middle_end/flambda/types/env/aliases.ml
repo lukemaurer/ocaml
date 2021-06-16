@@ -1080,14 +1080,16 @@ Format.eprintf "looking for canonical for %a, candidate canonical %a, min order 
 let get_aliases t element =
   match canonical t element with
   | Is_canonical ->
-    let canonical_element = element in
+    let canonical_element = Simple.without_coercion element in
     let alias_names_with_coercions_to_canonical =
       Aliases_of_canonical_element.all
         (get_aliases_of_canonical_element t ~canonical_element)
     in
-    let coercion_from_canonical_to_element = Coercion.id in
+    let coercion_from_canonical_to_element = Simple.coercion element in
     let alias_names_with_coercions_to_element =
-      alias_names_with_coercions_to_canonical
+      compose_map_values_exn
+        alias_names_with_coercions_to_canonical
+        ~then_:coercion_from_canonical_to_element
     in
     Alias_set.create_aliases_of_element
       ~element

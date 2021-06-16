@@ -1340,7 +1340,7 @@ let type_simple_in_term_exn t ?min_name_mode simple =
       ~min_name_mode ~min_binding_time
   with
   | exception Misc.Fatal_error ->
-    if true || !Clflags.flambda_context_on_error then begin
+    if !Clflags.flambda_context_on_error then begin
       Format.eprintf "\n%sContext is:%s typing environment@ %a\n"
         (Flambda_colours.error ())
         (Flambda_colours.normal ())
@@ -1422,7 +1422,7 @@ let get_canonical_simple_exn t ?min_name_mode ?name_mode_of_existing_simple
       ~min_name_mode ~min_binding_time
   with
   | exception Misc.Fatal_error ->
-    if true || !Clflags.flambda_context_on_error then begin
+    if !Clflags.flambda_context_on_error then begin
       Format.eprintf "\n%sContext is:%s typing environment@ %a\n"
         (Flambda_colours.error ())
         (Flambda_colours.normal ())

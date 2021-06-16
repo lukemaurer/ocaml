@@ -106,21 +106,6 @@ module Depth_variable : sig
   val of_var : Variable.t -> t
 
   val var : t -> Variable.t
-
-  module Or_zero : sig
-    type depth_variable := t
-
-    type t = private
-      | Var of depth_variable
-      | Zero
-
-    include Identifiable.S with type t := t
-
-    val var : depth_variable -> t
-    val zero : t
-
-    val map_var : t -> f:(depth_variable -> depth_variable) -> t
-  end
 end
 
 module Symbol : sig
@@ -163,17 +148,68 @@ module Name : sig
     -> 'a
 end
 
+module Rec_info_expr : sig
+  module Unrolling_state : sig
+    (** The current state of unrolling. Can be set by an [unroll_to] expression.
+        *)
+    type t = private
+      | Not_unrolling
+        (** Unrolling has not begun. *)
+      | Unrolling of { remaining_depth : int }
+        (** Unrolling has begun and will continue until [remaining_depth] is
+            zero. A subsequent [unroll_to] expression may increase the
+            remaining depth. *)
+      | Do_not_unroll
+        (** No unrolling may occur. [unroll_to] has no effect. *)
+
+    val not_unrolling : t
+    val unrolling : remaining_depth:int -> t
+    val do_not_unroll : t
+
+    val print : Format.formatter -> t -> unit
+
+    val equal : t -> t -> bool
+  end
+
+  (** An expression for the state of recursive inlining at a given occurrence.
+      Forms the right-hand side of a [Let_expr] binding for a depth variable. *)
+  type t = private
+    | Const of { depth : int Or_infinity.t; unrolling : Unrolling_state.t }
+    | Var of Depth_variable.t
+    | Succ of t
+      (** The next depth. If we inline an occurrence with depth [d], then in the
+          inlined body, recursive references will have depth [succ d]. *)
+    | Unroll_to of int * t
+      (** Indicate the depth to which unrolling should proceed. The unroll depth
+          is decremented by [Succ] until it reaches zero, at which
+          point all unrolling should stop. *)
+
+  val initial : t
+  val unknown : t
+  val do_not_inline : t
+  val const : depth:int Or_infinity.t -> unrolling:Unrolling_state.t -> t
+  val var : Depth_variable.t -> t
+  val succ : t -> t
+  val unroll_to : int -> t -> t
+
+  val is_obviously_initial : t -> bool
+
+  val print : Format.formatter -> t -> unit
+
+  val equal : t -> t -> bool
+end
+
 module Coercion : sig
   type t = private
     | Id
     | Change_depth of {
-        from : Depth_variable.Or_zero.t;
-        to_ : Depth_variable.Or_zero.t;
+        from : Rec_info_expr.t;
+        to_ : Rec_info_expr.t;
       }
 
   val change_depth
-    : from:Depth_variable.Or_zero.t
-    -> to_:Depth_variable.Or_zero.t
+    : from:Rec_info_expr.t
+    -> to_:Rec_info_expr.t
     -> t
 
   val id : t
@@ -186,8 +222,6 @@ module Coercion : sig
   val inverse : t -> t
 
   val compose : t -> then_:t -> t option
-
-  val compose_exn : t -> then_:t -> t
 
   val print : Format.formatter -> t -> unit
 

@@ -22,16 +22,18 @@ module Inlinable : sig
   val create
      : code_id:Code_id.t
     -> dbg:Debuginfo.t
-    -> rec_info:Depth_variable.Or_zero.t Or_unknown.t
+    -> rec_info:Type_grammar.t
     -> is_tupled:bool
     -> must_be_inlined:bool
     -> t
 
   val code_id : t -> Code_id.t
   val dbg : t -> Debuginfo.t
-  val rec_info : t -> Depth_variable.Or_zero.t Or_unknown.t
+  val rec_info : t -> Type_grammar.t
   val is_tupled : t -> bool
   val must_be_inlined : t -> bool
+
+  val print : Format.formatter -> t -> unit
 end
 
 module Non_inlinable : sig
@@ -44,6 +46,8 @@ module Non_inlinable : sig
 
   val code_id : t -> Code_id.t
   val is_tupled : t -> bool
+
+  val print : Format.formatter -> t -> unit
 end
 
 type t0 =

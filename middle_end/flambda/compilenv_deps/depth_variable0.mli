@@ -28,21 +28,6 @@ module type S = sig
   val of_var : Variable.t -> t
 
   val var : t -> Variable.t
-
-  module Or_zero : sig
-    type depth_variable := t
-
-    type t = private
-      | Var of depth_variable
-      | Zero
-
-    include Identifiable.S with type t := t
-
-    val var : depth_variable -> t
-    val zero : t
-
-    val map_var : t -> f:(depth_variable -> depth_variable) -> t
-  end
 end
 
 module Make(Variable : Identifiable.S) : S with module Variable = Variable

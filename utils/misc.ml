@@ -233,6 +233,15 @@ let reraise_preserving_backtrace e f =
   f ();
   Printexc.raise_with_backtrace e bt
 
+let print_lines ppf string =
+  let lines = String.split_on_char '\n' string in
+  Format.fprintf ppf "@[<v>%a@.@]"
+    (Format.pp_print_list ~pp_sep:Format.pp_print_cut Format.pp_print_string)
+    lines
+
+let print_backtrace ppf backtrace =
+  print_lines ppf (Printexc.raw_backtrace_to_string backtrace)
+
 type ref_and_value = R : 'a ref * 'a -> ref_and_value
 
 let protect_refs =

@@ -14,21 +14,26 @@
 (*                                                                        *)
 (**************************************************************************)
 
-[@@@ocaml.warning "+a-4-30-40-41-42"]
+[@@@ocaml.warning "+a-30-40-41-42"]
 
-type t
-
-val create : Variable.t -> Name_mode.t -> t
-
-val var : t -> Variable.t
-
-val simple : t -> Reg_width_things.Simple.t
-
-val name_mode : t -> Name_mode.t
-
-val rename : t -> t
-
-val with_name_mode : t -> Name_mode.t -> t
-
-include Identifiable.S with type t := t
-include Contains_names.S with type t := t
+let simplify_coercion dacc (coercion : Coercion.t) =
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>simplify_coercion@ %a@ = ...@]@.%!"
+      Coercion.print coercion
+  end;
+  (fun ans ->
+     if !Clflags.dump_rawflambda then begin
+       Format.eprintf "@[<hov 1>simplify_simple@ %a@ = %a@]@.%!"
+         Coercion.print coercion
+         Coercion.print ans
+     end;
+     ans
+  ) @@
+  match coercion with
+  | Id ->
+    coercion
+  | Change_depth { from; to_ } ->
+    let from' = Simplify_rec_info_expr.simplify_rec_info_expr dacc from in
+    let to_' = Simplify_rec_info_expr.simplify_rec_info_expr dacc to_ in
+    if from' == from && to_' == to_ then coercion else
+      Coercion.change_depth ~from:from' ~to_:to_'

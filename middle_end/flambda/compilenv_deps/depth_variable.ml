@@ -18,4 +18,4 @@
 
 include Reg_width_things.Depth_variable
 
-let create name = of_var (Variable.create name)
+let create name = of_var (Reg_width_things.Variable.create name)

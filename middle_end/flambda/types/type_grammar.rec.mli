@@ -167,7 +167,7 @@ val kind_for_const : Reg_width_const.t -> Flambda_kind.t
 val create_inlinable_function_declaration
    : code_id:Code_id.t
   -> dbg:Debuginfo.t
-  -> rec_info:Depth_variable.Or_zero.t Or_unknown.t
+  -> rec_info:t
   -> is_tupled:bool
   -> must_be_inlined:bool
   -> Function_declaration_type.t
@@ -210,6 +210,10 @@ val make_suitable_for_environment
   -> Typing_env_extension.With_extra_variables.t
 
 val expand_head : t -> Typing_env.t -> Resolved_type.t
+
+val tracing_meets : unit -> bool
+
+val with_tracing_meets : (unit -> 'a) -> 'a
 
 (** Greatest lower bound of two types. *)
 val meet : Meet_env.t -> t -> t -> (t * Typing_env_extension.t) Or_bottom.t

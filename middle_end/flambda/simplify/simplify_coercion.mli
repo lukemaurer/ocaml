@@ -14,21 +14,6 @@
 (*                                                                        *)
 (**************************************************************************)
 
-[@@@ocaml.warning "+a-4-30-40-41-42"]
+[@@@ocaml.warning "+a-30-40-41-42"]
 
-type t
-
-val create : Variable.t -> Name_mode.t -> t
-
-val var : t -> Variable.t
-
-val simple : t -> Reg_width_things.Simple.t
-
-val name_mode : t -> Name_mode.t
-
-val rename : t -> t
-
-val with_name_mode : t -> Name_mode.t -> t
-
-include Identifiable.S with type t := t
-include Contains_names.S with type t := t
+val simplify_coercion : Downwards_acc.t -> Coercion.t -> Coercion.t

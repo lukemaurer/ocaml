@@ -16,6 +16,8 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
+module Simple = Reg_width_things.Simple
+
 type t = {
   var : Variable.t;
   name_mode : Name_mode.t;

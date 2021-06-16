@@ -30,17 +30,20 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-module Make(Depth_variable : Depth_variable0.S) : sig
+module type S = sig
+  type depth_variable
+  type rec_info_expr
+
   type t = private
     | Id
     | Change_depth of {
-        from : Depth_variable.Or_zero.t;
-        to_ : Depth_variable.Or_zero.t;
+        from : rec_info_expr;
+        to_ : rec_info_expr;
       }
 
   val change_depth
-    : from:Depth_variable.Or_zero.t
-    -> to_:Depth_variable.Or_zero.t
+    : from:rec_info_expr
+    -> to_:rec_info_expr
     -> t
 
   val id : t
@@ -54,13 +57,15 @@ module Make(Depth_variable : Depth_variable0.S) : sig
 
   val compose : t -> then_:t -> t option
 
-  val compose_exn : t -> then_:t -> t
-
   val print : Format.formatter -> t -> unit
 
   val equal : t -> t -> bool
 
   val hash : t -> int
 
-  val map_depth_variables : t -> f:(Depth_variable.t -> Depth_variable.t) -> t
+  val map_depth_variables : t -> f:(depth_variable -> depth_variable) -> t
 end
+
+module Make(Rec_info_expr : Rec_info_expr0.S)
+  : S with type depth_variable = Rec_info_expr.depth_variable
+       and type rec_info_expr = Rec_info_expr.t

@@ -23,7 +23,7 @@ module Inlinable = struct
   type t = {
     code_id : Code_id.t;
     dbg : Debuginfo.t;
-    rec_info : Depth_variable.Or_zero.t Or_unknown.t;
+    rec_info : Type_grammar.t;
     is_tupled : bool;
     must_be_inlined : bool;
   }
@@ -39,22 +39,11 @@ module Inlinable = struct
         )@]"
       Code_id.print code_id
       Debuginfo.print_compact dbg
-      (Or_unknown.print Depth_variable.Or_zero.print) rec_info
+      Type_grammar.print rec_info
       is_tupled
       must_be_inlined
 
-  exception Urk
-
   let create ~code_id ~dbg ~rec_info ~is_tupled ~must_be_inlined =
-    if !Clflags.dump_rawflambda then begin match rec_info with
-    | Or_unknown.Unknown ->
-      begin try raise Urk with
-      | Urk -> let bt = Printexc.get_callstack 10 in
-                 Printf.eprintf "Unknown!!\n%a\n%!"
-                   Printexc.print_raw_backtrace bt
-      end
-    | Or_unknown.Known _ -> ()
-    end;
     { code_id;
       dbg;
       rec_info;
@@ -69,10 +58,11 @@ module Inlinable = struct
   let must_be_inlined t = t.must_be_inlined
 
   let apply_renaming
-        ({ code_id; dbg = _; rec_info = _; is_tupled = _;
+        ({ code_id; dbg = _; rec_info; is_tupled = _;
            must_be_inlined = _ } as t) renaming =
     let code_id' = Renaming.apply_code_id renaming code_id in
-    if code_id == code_id' then t
+    let rec_info' = Type_grammar.apply_renaming rec_info renaming in
+    if code_id == code_id' && rec_info == rec_info' then t
     else { t with code_id = code_id'; }
 
 end
@@ -150,7 +140,12 @@ let apply_renaming (t : t) renaming : t =
     Ok (Non_inlinable (Non_inlinable.apply_renaming non_inlinable renaming))
 
 let meet (env : Meet_env.t) (t1 : t) (t2 : t)
-      : (t * TEE.t) Or_bottom.t =
+    : (t * TEE.t) Or_bottom.t =
+  if !Clflags.dump_rawflambda then begin
+    Format.eprintf "@[<hov 1>Function_declaration_type.meet:@ %a@ ∧ %a@ = ...@]@.%!"
+      print t1
+      print t2
+  end;
   match t1, t2 with
   (* CR mshinwell: Try to factor out "Or_unknown_or_bottom" handling from here
      and elsewhere *)
@@ -203,27 +198,8 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
     let typing_env = Meet_env.env env in
     let target_code_age_rel = TE.code_age_relation typing_env in
     let resolver = TE.code_age_relation_resolver typing_env in
-    let rec_info =
-      (* CR-someday lmaurer: Give [Rec_info_expr] proper meet and join, if
-        possible. If we see the depth as an upper bound and the unroll depth as
-        a lower bound, both meet and join are sensible and easy to define.
-        However, we don't always treat the unroll depth as a lower bound: if
-        it's None or Some 1, we sometimes unroll, but if it's Some 0, we never
-        unroll. *)
-      Format.eprintf "meet:@.%!";
-      if (Or_unknown.equal Depth_variable.Or_zero.equal) rec_info1 rec_info2 then
-        rec_info1
-      else begin
-        if !Clflags.dump_rawflambda then begin
-          Format.eprintf "[@<hov 1>meet:@ %a@ ∧ %a@ = %a@]@.%!"
-            (Or_unknown.print Depth_variable.Or_zero.print) rec_info1
-            (Or_unknown.print Depth_variable.Or_zero.print) rec_info2
-            (Or_bottom.print print) Or_bottom.Bottom
-        end;
-        Or_unknown.Unknown
-      end
-    in
-    let check_other_things_and_return code_id : (t * TEE.t) Or_bottom.t =
+    let check_other_things_and_return code_id rec_info extension
+      : (t * TEE.t) Or_bottom.t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
       assert (Bool.equal is_tupled1 is_tupled2);
       assert (Bool.equal must_be_inlined1 must_be_inlined2);
@@ -234,12 +210,19 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
           is_tupled = is_tupled1;
           must_be_inlined = must_be_inlined1;
         }),
-        TEE.empty ())
+        extension)
     in
     begin match
       Code_age_relation.meet target_code_age_rel ~resolver code_id1 code_id2
     with
-    | Ok code_id -> check_other_things_and_return code_id
+    | Ok code_id ->
+      begin match
+        Type_grammar.meet env rec_info1 rec_info2
+      with
+      | Ok (rec_info, extension) ->
+        check_other_things_and_return code_id rec_info extension
+      | Bottom -> Bottom
+      end
     | Bottom -> Bottom
     end
 
@@ -299,22 +282,7 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
     let typing_env = Join_env.target_join_env env in
     let target_code_age_rel = TE.code_age_relation typing_env in
     let resolver = TE.code_age_relation_resolver typing_env in
-    let rec_info : _ Or_unknown.t =
-      (* A join of two rec_infos is a bit easier to imagine than a meet, but still
-        undoubtedly very rare. *)
-      if (Or_unknown.equal Depth_variable.Or_zero.equal) rec_info1 rec_info2 then
-        rec_info1
-      else begin
-        if !Clflags.dump_rawflambda then begin
-          Format.eprintf "[@<hov 1>join:@ %a@ ∨ %a@ = %a@]@.%!"
-            (Or_unknown.print Depth_variable.Or_zero.print) rec_info1
-            (Or_unknown.print Depth_variable.Or_zero.print) rec_info2
-            (Or_unknown.print print) Or_unknown.Unknown
-        end;
-        Unknown
-      end
-    in
-    let check_other_things_and_return code_id : t =
+    let check_other_things_and_return code_id rec_info : t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
       assert (Bool.equal is_tupled1 is_tupled2);
       assert (Bool.equal must_be_inlined1 must_be_inlined2);
@@ -336,7 +304,12 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
       Code_age_relation.join ~target_t:target_code_age_rel ~resolver
         code_age_rel1 code_age_rel2 code_id1 code_id2
     with
-    | Known code_id -> check_other_things_and_return code_id
+    | Known code_id ->
+      begin match Type_grammar.join env rec_info1 rec_info2 with
+      | Known rec_info ->
+        check_other_things_and_return code_id rec_info
+      | Unknown -> Unknown
+      end
     | Unknown -> Unknown
     end
 
@@ -352,5 +325,6 @@ let apply_coercion (t : t) (coercion : Coercion.t) : t Or_bottom.t =
          environment or making absolutely sure that rec_infos get
          canonicalized. *)
       ignore (from, rec_info);
-      Ok (Ok (Inlinable { inlinable with rec_info = Known to_ }))
+      let rec_info = Type_grammar.this_rec_info to_ in
+      Ok (Ok (Inlinable { inlinable with rec_info; }))
     end

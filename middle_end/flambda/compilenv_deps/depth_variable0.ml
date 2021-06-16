@@ -28,21 +28,6 @@ module type S = sig
   val of_var : Variable.t -> t
 
   val var : t -> Variable.t
-
-  module Or_zero : sig
-    type depth_variable := t
-
-    type t = private
-      | Var of depth_variable
-      | Zero
-
-    include Identifiable.S with type t := t
-
-    val var : depth_variable -> t
-    val zero : t
-
-    val map_var : t -> f:(depth_variable -> depth_variable) -> t
-  end
 end
 
 module Make(Variable : Identifiable.S) : S with module Variable = Variable =
@@ -70,45 +55,4 @@ struct
 
   let of_var t = t
   let var t = t
-
-  module Or_zero = struct
-    module T0 = struct
-      type nonrec t =
-        | Var of t
-        | Zero
-
-      let print ppf = function
-        | Var dv -> print ppf dv
-        | Zero -> Format.pp_print_string ppf "0"
-
-      let output out t = print (Format.formatter_of_out_channel out) t
-
-      let compare t1 t2 =
-        match t1, t2 with
-        | Zero, Zero -> 0
-        | Zero, Var _ -> -1
-        | Var _, Zero -> 1
-        | Var dv1, Var dv2 -> compare dv1 dv2
-
-      let equal t1 t2 = (compare t1 t2 = 0)
-
-      let hash = function
-        | Var t -> Hashtbl.hash (0, hash t)
-        | Zero -> Hashtbl.hash 1
-
-    end
-
-    include T0
-    include Identifiable.Make(T0)
-
-    let var t = Var t
-    let zero = Zero
-
-    let map_var t ~f =
-      match t with
-      | Var dv ->
-        let new_dv = f dv in
-        if new_dv == dv then t else Var new_dv
-      | Zero -> Zero
-  end
 end

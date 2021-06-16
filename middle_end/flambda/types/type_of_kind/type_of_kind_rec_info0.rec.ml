@@ -34,15 +34,19 @@ let apply_coercion t coercion : _ Or_bottom.t =
 
 let eviscerate _ : _ Or_unknown.t = Unknown
 
-let meet _env t1 t2 : _ Or_bottom.t =
+let meet env t1 t2 : _ Or_bottom.t =
   if Rec_info_expr.equal t1 t2 then
     Ok (t1, Typing_env_extension.empty ())
   else begin
     if !Clflags.dump_rawflambda then begin
-      Format.eprintf "[@<hov 1>meet:@ %a@ ∧ %a@ = %a@]"
+      Format.eprintf "@[<hov 1>Type_of_kind_rec_info.meet:@ %a@ ∧ %a@ = %a@ \
+                      @[<hov 1>backtrace:@ %a@]@ \
+                      @[<hov 1>env:@ %a@]@]@.%!"
         print t1
         print t2
         (Or_bottom.print print) Or_bottom.Bottom
+        Misc.print_backtrace (Printexc.get_callstack 20)
+        Meet_env.print env
     end;
     Bottom
   end
@@ -50,7 +54,7 @@ let meet _env t1 t2 : _ Or_bottom.t =
 let join _env t1 t2 : _ Or_unknown.t =
   if Rec_info_expr.equal t1 t2 then Known t1 else begin
     if !Clflags.dump_rawflambda then begin
-      Format.eprintf "[@<hov 1>join:@ %a@ ∨ %a@ = %a@]"
+      Format.eprintf "@[<hov 1>join:@ %a@ ∨ %a@ = %a@]"
         print t1
         print t2
         (Or_unknown.print print) Or_unknown.Unknown

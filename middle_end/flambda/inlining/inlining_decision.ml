@@ -411,11 +411,13 @@ let might_inline dacc ~apply ~function_decl ~simplify_expr ~return_arity
 let make_decision_for_call_site dacc ~simplify_expr ~function_decl
       ~apply ~return_arity : Call_site_decision.t =
   let function_decl_rec_info = I.rec_info function_decl in
-  (* CR lmaurer: This should probably be what I.rec_info returns *)
   let function_decl_rec_info =
-    match function_decl_rec_info with
+    match
+      Flambda_type.prove_rec_info (DA.typing_env dacc) function_decl_rec_info
+    with
+    | Proved rec_info -> rec_info
     | Unknown -> Rec_info_expr.unknown
-    | Known dv -> Rec_info_expr.var_or_zero dv
+    | Invalid -> Rec_info_expr.do_not_inline
   in
   let inline = Apply.inline apply in
   if !Clflags.dump_rawflambda then begin

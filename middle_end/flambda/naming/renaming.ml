@@ -24,6 +24,7 @@ module Variables = (Permutation.Make [@inlined hint]) (Variable)
 module Code_ids = (Permutation.Make [@inlined hint]) (Code_id)
 module Symbols = (Permutation.Make [@inlined hint]) (Symbol)
 
+module Coercion = Reg_width_things.Coercion
 module Const = Reg_width_things.Const
 module Simple = Reg_width_things.Simple
 
@@ -329,8 +330,7 @@ let apply_simple t simple =
   let [@inline always] name old_name ~coercion:old_coercion =
     let new_name = apply_name t old_name in
     let new_coercion =
-      (* Can't use Coercion without incurring a circular dependency *)
-      Reg_width_things.Coercion.map_depth_variables old_coercion
+      Coercion.map_depth_variables old_coercion
         ~f:(fun dv ->
             apply_variable t (Depth_variable.var dv)
             |> Depth_variable.of_var)

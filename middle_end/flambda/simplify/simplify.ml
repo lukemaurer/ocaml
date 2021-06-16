@@ -99,7 +99,7 @@ let run ~backend ~round unit =
           Misc.fatal_errorf "Variable %a not expected to be free in \
               whole-compilation-unit term:@ %a"
             Variable.print var
-            Expr.print body)
+            (if false then fun _ _ -> () else Expr.print) body)
         ~symbol:(fun _symbol -> ()));
   let return_cont_env = DA.continuation_uses_env (UA.creation_dacc uacc) in
   let all_code =

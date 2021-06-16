@@ -112,19 +112,7 @@ module Evaluated_rec_info_expr = struct
   }
 
   let print ppf { depth; unrolling } =
-    let is_default_unrolling =
-      match unrolling with
-      | Not_unrolling -> true
-      | Unrolling _ | Do_not_unroll -> false
-    in
-    Format.fprintf ppf
-      "@[<hov 1>\
-       @[<hov 1>(depth@ %a)@]@ \
-       @[<hov 1>@<0>%s(unrolling@ %a)@<0>%s@]@]"
-      (Or_infinity.print ~f:Format.pp_print_int) depth
-      (if is_default_unrolling then Flambda_colours.elide () else "")
-      Rec_info_expr.Unrolling_state.print unrolling
-      (Flambda_colours.normal ())
+    Rec_info_expr.print ppf (Rec_info_expr.const ~depth ~unrolling)
 end
 
 let evaluate_rec_info_expr dacc rec_info_expr =

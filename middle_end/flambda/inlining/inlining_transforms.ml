@@ -47,32 +47,10 @@ let make_inlined_body ~callee ~params ~args ~my_closure ~my_depth ~rec_info
       let unrolled_rec_info =
         Rec_info_expr.unroll_to unroll_depth rec_info
       in
-      let prev_depth =
-        (* CR lmaurer: This should currently always work, but it's ugly and
-           fragile. We want to create a coercion from [rec_info] to
-           [unrolled_rec_info]. The trouble is that coercions can only carry
-           depth variables, not full rec_info expressions, since that simplifies
-           a lot (rec_info_expr and simple would be mutually recursive otherwise
-           ...). We could just let [prev_depth] be a fresh variable and then
-           bind it to whatever [rec_info] is, but the check in
-           [Coercion.compose_exn] has no way of knowing that [prev_depth] is the
-           same rec info that [callee] is coerced to. We could extract the
-           variable from the coercion on [callee] but that strikes me as even
-           uglier. *)
-        match (rec_info : Rec_info_expr.t) with
-        | Var var ->
-          Depth_variable.Or_zero.var var
-        | Const _ | Succ _ | Unroll_to _ ->
-          if Rec_info_expr.is_obviously_initial rec_info then
-            Depth_variable.Or_zero.zero
-          else
-            Misc.fatal_errorf "Unexpected complex rec info:@ %a"
-              Rec_info_expr.print rec_info
-      in
       let coercion_from_callee_to_unrolled_callee =
         Coercion.change_depth
-          ~from:prev_depth
-          ~to_:(Depth_variable.Or_zero.var my_depth)
+          ~from:rec_info
+          ~to_:(Rec_info_expr.var my_depth)
       in
       let callee =
         Simple.apply_coercion_exn callee coercion_from_callee_to_unrolled_callee
@@ -219,9 +197,10 @@ let inline dacc ~apply ~unroll_to function_decl =
   let denv = DA.denv dacc in
   let code = DE.find_code denv (I.code_id function_decl) in
   let rec_info =
-    match I.rec_info function_decl with
-    | Known dv -> Rec_info_expr.var_or_zero dv
+    match T.prove_rec_info (DE.typing_env denv) (I.rec_info function_decl) with
+    | Proved rec_info -> rec_info
     | Unknown -> Rec_info_expr.unknown
+    | Invalid -> Rec_info_expr.do_not_inline
   in
   let denv = DE.enter_inlined_apply ~called_code:code ~apply denv in
   let params_and_body =
