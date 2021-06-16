@@ -129,22 +129,20 @@ module Make(Depth_variable : Depth_variable0.S)
 
   let rec print ppf = function
     | Const { depth; unrolling } ->
-      let unrolling_is_default =
-        match unrolling with
-        | Not_unrolling -> true
-        | Unrolling _ | Do_not_unroll -> false
-      in
-      Format.fprintf ppf
-        "@<0>%s@[<hov 1>(\
-         @[<hov 1>(depth@ %a)@]@ \
-         @[<hov 1>@<0>%s%a@<0>%s@]\
-         )@]@<0>%s"
+      begin match unrolling with
+      | Not_unrolling ->
+        Format.fprintf ppf "@<0>%s%a@<0>%s"
+          (Flambda_colours.rec_info ())
+          (Or_infinity.print ~f:Format.pp_print_int) depth
+          (Flambda_colours.normal ())
+      | Unrolling _ | Do_not_unroll ->
+        Format.fprintf ppf
+          "@<0>%s@[<hov 1>(%a@ %a)@]@<0>%s"
         (Flambda_colours.rec_info ())
         (Or_infinity.print ~f:Format.pp_print_int) depth
-        (if unrolling_is_default then Flambda_colours.elide () else "")
         Unrolling_state.print unrolling
-        (Flambda_colours.rec_info ())
         (Flambda_colours.normal ())
+      end
     | Var dv ->
       Depth_variable.print ppf dv
     | Succ t ->
