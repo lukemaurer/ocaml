@@ -99,7 +99,6 @@ val make_decision_for_call_site
    : Downwards_acc.t
   -> simplify_expr:Expr.t Simplify_common.expr_simplifier
   -> function_decl:Flambda_type.Function_declaration_type.Inlinable.t
-  -> function_decl_rec_info:Rec_info.t
   -> apply:Apply.t
   -> return_arity:Flambda_arity.With_subkinds.t
   -> Call_site_decision.t

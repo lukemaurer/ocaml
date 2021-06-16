@@ -422,7 +422,7 @@ let might_inline dacc ~apply ~function_decl ~simplify_expr ~return_arity
       Speculatively_not_inline { cost_metrics; evaluated_to; threshold }
 
 let make_decision_for_call_site dacc ~simplify_expr ~function_decl
-      ~function_decl_rec_info:_ ~apply ~return_arity : Call_site_decision.t =
+      ~apply ~return_arity : Call_site_decision.t =
   let inline = Apply.inline apply in
   match inline with
   | Never_inline -> Never_inline_attribute

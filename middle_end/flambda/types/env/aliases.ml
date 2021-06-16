@@ -43,6 +43,8 @@ module Map_to_canonical = struct
           if Coercion.equal coercion1 coercion2 then
             Some coercion1
           else
+            (* CR lmaurer: We might not want to die here!! Finding best
+               alias when joining, where coercion is different on each side?? *)
             fatal_inconsistent
               ~func_name:"Aliases.Map_to_canonical.inter"
               elt coercion1 coercion2)
@@ -966,7 +968,7 @@ let get_canonical_element_exn t element elt_name_mode ~min_name_mode
   let canonical_element, name_mode, coercion_from_canonical_to_element =
     match canonical t element with
     | Is_canonical ->
-      element, elt_name_mode, Coercion.id
+      Simple.without_coercion element, elt_name_mode, Simple.coercion element
     | Alias_of_canonical { canonical_element; coercion_to_canonical; } ->
       let name_mode = name_mode t canonical_element ~min_binding_time in
       canonical_element, name_mode, Coercion.inverse coercion_to_canonical
@@ -1036,14 +1038,16 @@ Format.eprintf "looking for canonical for %a, candidate canonical %a, min order 
 let get_aliases t element =
   match canonical t element with
   | Is_canonical ->
-    let canonical_element = element in
+    let canonical_element = Simple.without_coercion element in
     let alias_names_with_coercions_to_canonical =
       Aliases_of_canonical_element.all
         (get_aliases_of_canonical_element t ~canonical_element)
     in
-    let coercion_from_canonical_to_element = Coercion.id in
+    let coercion_from_canonical_to_element = Simple.coercion element in
     let alias_names_with_coercions_to_element =
-      alias_names_with_coercions_to_canonical
+      compose_map_values_exn
+        alias_names_with_coercions_to_canonical
+        ~then_:coercion_from_canonical_to_element
     in
     Alias_set.create_aliases_of_element
       ~element

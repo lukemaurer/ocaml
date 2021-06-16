@@ -23,7 +23,7 @@ module Inlinable = struct
   type t = {
     code_id : Code_id.t;
     dbg : Debuginfo.t;
-    rec_info : Rec_info.t;
+    rec_info : Type_grammar.t;
     is_tupled : bool;
     must_be_inlined : bool;
   }
@@ -39,7 +39,7 @@ module Inlinable = struct
         )@]"
       Code_id.print code_id
       Debuginfo.print_compact dbg
-      Rec_info.print rec_info
+      Type_grammar.print rec_info
       is_tupled
       must_be_inlined
 
@@ -53,15 +53,17 @@ module Inlinable = struct
 
   let code_id t = t.code_id
   let dbg t = t.dbg
+  let rec_info t = t.rec_info
   let is_tupled t = t.is_tupled
   let must_be_inlined t = t.must_be_inlined
 
   let apply_renaming
-        ({ code_id; dbg = _; rec_info = _; is_tupled = _;
+        ({ code_id; dbg = _; rec_info; is_tupled = _;
            must_be_inlined = _ } as t) renaming =
     let code_id' = Renaming.apply_code_id renaming code_id in
-    if code_id == code_id' then t
-    else { t with code_id = code_id'; rec_info = Rec_info.unknown }
+    let rec_info' = Type_grammar.apply_renaming rec_info renaming in
+    if code_id == code_id' && rec_info == rec_info' then t
+    else { t with code_id = code_id'; }
 
 end
 
@@ -131,6 +133,7 @@ let all_ids_for_export (t : t) =
 let apply_renaming (t : t) renaming : t =
   match t with
   | Bottom | Unknown -> t
+  | Ok _ when false -> assert false
   | Ok (Inlinable inlinable) ->
     Ok (Inlinable (Inlinable.apply_renaming inlinable renaming))
   | Ok (Non_inlinable non_inlinable) ->
@@ -176,37 +179,45 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
   | Ok (Inlinable {
       code_id = code_id1;
       dbg = dbg1;
-      rec_info = _;
+      rec_info = rec_info1;
       is_tupled = is_tupled1;
       must_be_inlined = must_be_inlined1;
     }),
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      rec_info = _;
+      rec_info = rec_info2;
       is_tupled = is_tupled2;
       must_be_inlined = must_be_inlined2;
     }) ->
     let typing_env = Meet_env.env env in
     let target_code_age_rel = TE.code_age_relation typing_env in
     let resolver = TE.code_age_relation_resolver typing_env in
-    let check_other_things_and_return code_id : (t * TEE.t) Or_bottom.t =
+    let check_other_things_and_return code_id rec_info extension
+      : (t * TEE.t) Or_bottom.t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
       assert (Bool.equal is_tupled1 is_tupled2);
       assert (Bool.equal must_be_inlined1 must_be_inlined2);
       Ok (Ok (Inlinable {
           code_id;
           dbg = dbg1;
-          rec_info = Rec_info.unknown;
+          rec_info;
           is_tupled = is_tupled1;
           must_be_inlined = must_be_inlined1;
         }),
-        TEE.empty ())
+        extension)
     in
     begin match
       Code_age_relation.meet target_code_age_rel ~resolver code_id1 code_id2
     with
-    | Ok code_id -> check_other_things_and_return code_id
+    | Ok code_id ->
+      begin match
+        Type_grammar.meet env rec_info1 rec_info2
+      with
+      | Ok (rec_info, extension) ->
+        check_other_things_and_return code_id rec_info extension
+      | Bottom -> Bottom
+      end
     | Bottom -> Bottom
     end
 
@@ -248,31 +259,32 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
     (* CR mshinwell: This should presumably return [Non_inlinable] if
        the arities match. *)
     Unknown
+
   | Ok (Inlinable {
       code_id = code_id1;
       dbg = dbg1;
-      rec_info = _;
+      rec_info = rec_info1;
       is_tupled = is_tupled1;
       must_be_inlined = must_be_inlined1;
     }),
     Ok (Inlinable {
       code_id = code_id2;
       dbg = dbg2;
-      rec_info = _;
+      rec_info = rec_info2;
       is_tupled = is_tupled2;
       must_be_inlined = must_be_inlined2;
     }) ->
     let typing_env = Join_env.target_join_env env in
     let target_code_age_rel = TE.code_age_relation typing_env in
     let resolver = TE.code_age_relation_resolver typing_env in
-    let check_other_things_and_return code_id : t =
+    let check_other_things_and_return code_id rec_info : t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
       assert (Bool.equal is_tupled1 is_tupled2);
       assert (Bool.equal must_be_inlined1 must_be_inlined2);
       Ok (Inlinable {
         code_id;
         dbg = dbg1;
-        rec_info = Rec_info.unknown;
+        rec_info;
         is_tupled = is_tupled1;
         must_be_inlined = must_be_inlined1;
       })
@@ -287,9 +299,27 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
       Code_age_relation.join ~target_t:target_code_age_rel ~resolver
         code_age_rel1 code_age_rel2 code_id1 code_id2
     with
-    | Known code_id -> check_other_things_and_return code_id
+    | Known code_id ->
+      begin match Type_grammar.join env rec_info1 rec_info2 with
+      | Known rec_info ->
+        check_other_things_and_return code_id rec_info
+      | Unknown -> Unknown
+      end
     | Unknown -> Unknown
     end
 
-let apply_coercion (t : t) _coercion : t Or_bottom.t =
-  Ok t
+let apply_coercion (t : t) (coercion : Coercion.t) : t Or_bottom.t =
+  match coercion with
+  | Id -> Ok t
+  | Change_depth { from; to_ } ->
+    begin match t with
+    | Unknown | Bottom | Ok (Non_inlinable _) -> Ok t
+    | Ok (Inlinable ({ rec_info; _ } as inlinable)) ->
+      (* CR lmaurer: We should really be checking that [from] matches the
+         current [rec_info], but that requires either passing in a typing
+         environment or making absolutely sure that rec_infos get
+         canonicalized. *)
+      ignore (from, rec_info);
+      let rec_info = Type_grammar.this_rec_info to_ in
+      Ok (Ok (Inlinable { inlinable with rec_info; }))
+    end

@@ -30,29 +30,42 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-type t = private
-  | Id
-  | Non_id of {
-      from_depth : int;
-      to_depth : int;
-    }
+module type S = sig
+  type variable
+  type rec_info_expr
 
-val change_depth : from:int -> to_:int -> t
+  type t = private
+    | Id
+    | Change_depth of {
+        from : rec_info_expr;
+        to_ : rec_info_expr;
+      }
 
-val id : t
+  val change_depth
+    : from:rec_info_expr
+    -> to_:rec_info_expr
+    -> t
 
-val is_id : t -> bool
+  val id : t
 
-val inverse : t -> t
+  (* CR lmaurer: This should be renamed to [is_obviously_id] since we can't
+    guarantee in [Change_depth { from; to_ }] that [from] and [to_] are
+    distinct (in any context) *)
+  val is_id : t -> bool
 
-val compose : t -> then_:t -> t option
+  val inverse : t -> t
 
-val compose_exn : t -> then_:t -> t
+  val compose : t -> then_:t -> t option
 
-val print : Format.formatter -> t -> unit
+  val print : Format.formatter -> t -> unit
 
-val equal : t -> t -> bool
+  val equal : t -> t -> bool
 
-val hash : t -> int
+  val hash : t -> int
 
-val apply_to_rec_info : t -> Rec_info.t -> Rec_info.t
+  val map_depth_variables : t -> f:(variable -> variable) -> t
+end
+
+module Make(Rec_info_expr : Rec_info_expr0.S)
+  : S with type variable = Rec_info_expr.variable
+       and type rec_info_expr = Rec_info_expr.t

@@ -243,6 +243,7 @@ module Function_declaration_type : sig
 
     val code_id : t -> Code_id.t
     val dbg : t -> Debuginfo.t
+    val rec_info : t -> flambda_type
     val is_tupled : t -> bool
     val must_be_inlined : t -> bool
   end
@@ -416,7 +417,7 @@ val mutable_string : size:int -> t
 val create_inlinable_function_declaration
    : code_id:Code_id.t
   -> dbg:Debuginfo.t
-  -> rec_info:Rec_info.t
+  -> rec_info:t
   -> is_tupled:bool
   -> must_be_inlined:bool
   -> Function_declaration_type.t
