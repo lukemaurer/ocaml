@@ -34,30 +34,12 @@ let apply_coercion t coercion : _ Or_bottom.t =
 
 let eviscerate _ : _ Or_unknown.t = Unknown
 
-let meet env t1 t2 : _ Or_bottom.t =
+let meet _env t1 t2 : _ Or_bottom.t =
+  (* CR lmaurer: This could be doing things like discovering two depth
+     variables are equal *)
   if Rec_info_expr.equal t1 t2 then
     Ok (t1, Typing_env_extension.empty ())
-  else begin
-    if !Clflags.dump_rawflambda then begin
-      Format.eprintf "@[<hov 1>Type_of_kind_rec_info.meet:@ %a@ ∧ %a@ = %a@ \
-                      @[<hov 1>backtrace:@ %a@]@ \
-                      @[<hov 1>env:@ %a@]@]@.%!"
-        print t1
-        print t2
-        (Or_bottom.print print) Or_bottom.Bottom
-        Misc.print_backtrace (Printexc.get_callstack 20)
-        Meet_env.print env
-    end;
-    Bottom
-  end
+  else Bottom
 
 let join _env t1 t2 : _ Or_unknown.t =
-  if Rec_info_expr.equal t1 t2 then Known t1 else begin
-    if !Clflags.dump_rawflambda then begin
-      Format.eprintf "@[<hov 1>join:@ %a@ ∨ %a@ = %a@]"
-        print t1
-        print t2
-        (Or_unknown.print print) Or_unknown.Unknown
-    end;
-    Unknown
-  end
+  if Rec_info_expr.equal t1 t2 then Known t1 else Unknown

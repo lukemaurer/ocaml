@@ -25,21 +25,3 @@ type t =
   | Naked_int64 of Type_of_kind_naked_int64_0.t Or_unknown_or_bottom.t
   | Naked_nativeint of Type_of_kind_naked_nativeint0.t Or_unknown_or_bottom.t
   | Rec_info of Type_of_kind_rec_info0.t Or_unknown_or_bottom.t
-
-let print ppf = function
-  | Const c ->
-    Reg_width_const.Descr.print ppf c
-  | Value v ->
-    Or_unknown_or_bottom.print Type_of_kind_value0.print ppf v
-  | Naked_immediate i ->
-    Or_unknown_or_bottom.print Type_of_kind_naked_immediate0.print ppf i
-  | Naked_float f ->
-    Or_unknown_or_bottom.print Type_of_kind_naked_float0.print ppf f
-  | Naked_int32 i ->
-    Or_unknown_or_bottom.print Type_of_kind_naked_int32_0.print ppf i
-  | Naked_int64 i ->
-    Or_unknown_or_bottom.print Type_of_kind_naked_int64_0.print ppf i
-  | Naked_nativeint i ->
-    Or_unknown_or_bottom.print Type_of_kind_naked_nativeint0.print ppf i
-  | Rec_info ri ->
-    Or_unknown_or_bottom.print Type_of_kind_rec_info0.print ppf ri

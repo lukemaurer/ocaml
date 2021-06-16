@@ -171,26 +171,6 @@ struct
       | _, _,           Bottom, Some _ -> false
       | _ -> true
     in
-    if Type_grammar.tracing_meets () && !Clflags.dump_rawflambda then begin
-      Format.eprintf
-        "@[<hov 1>Row_like.meet:@ %a@ ∧ %a@ = ...@]@.%!"
-        print t1
-        print t2
-    end;
-    (fun f -> let ans = f () in
-      let print_type_and_ext ppf (ty, ext) =
-        Format.fprintf ppf "@[<hov 1>%a@ with %a@]"
-          print ty
-          Typing_env_extension.print ext
-      in
-      if Type_grammar.tracing_meets () && !Clflags.dump_rawflambda then begin
-        Format.eprintf
-          "@[<hov 1>Row_like.meet:@ %a@ ∧ %a@ = %a@]@.%!"
-          print t1
-          print t2
-          (Or_bottom.print print_type_and_ext) ans
-      end;
-      ans) @@ fun () : (t * Typing_env_extension.t) Or_bottom.t ->
     let env = Meet_env.env meet_env in
     let join_env =
       Join_env.create env ~left_env:env ~right_env:env

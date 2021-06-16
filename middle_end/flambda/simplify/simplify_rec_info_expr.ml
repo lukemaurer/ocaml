@@ -58,12 +58,6 @@ type on_unknown =
   | Assume_value of Rec_info_expr.t
 
 let rec simplify_rec_info_expr0 denv orig ~on_unknown : Rec_info_expr.t =
-  (fun ans -> if !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>simplify_rec_info_expr@ %a@ = %a@]@.%!"
-      Rec_info_expr.print orig
-      Rec_info_expr.print ans
-  end;
-  ans) @@ ((
   match (orig : Rec_info_expr.t) with
   | Const _ -> orig
   | Var dv ->
@@ -96,7 +90,6 @@ let rec simplify_rec_info_expr0 denv orig ~on_unknown : Rec_info_expr.t =
     | (Var _ | Succ _ | Unroll_to _) as new_ri ->
       if ri == new_ri then orig else Rec_info_expr.unroll_to unroll_depth new_ri
     end
-) : Rec_info_expr.t)
 
 let simplify_rec_info_expr dacc rec_info_expr =
   let ans =

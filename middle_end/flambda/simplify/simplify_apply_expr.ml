@@ -98,17 +98,6 @@ let rebuild_non_inlined_direct_full_application apply ~use_id ~exn_cont_use_id
 
 let simplify_direct_full_application ~simplify_expr dacc apply function_decl_opt
       ~callee's_code_id ~result_arity ~down_to_up ~coming_from_indirect =
-  if !Clflags.dump_rawflambda then begin
-    Format.eprintf
-      "@[<hov 1>simplify_direct_full_application@ %a@ \
-       @[<hov 1>decl:@ %a@]@ \
-       @[<hov 1>env:@ %a@]@]@.%!"
-      Apply_expr.print apply
-      (Format.pp_print_option T.Function_declaration_type.Inlinable.print
-         ~none:(fun fmt () -> Format.pp_print_string fmt "<none>"))
-         function_decl_opt
-      TE.print (DA.typing_env dacc)
-  end;
   let inlined =
     match function_decl_opt with
     | None ->
@@ -158,17 +147,7 @@ let simplify_direct_full_application ~simplify_expr dacc apply function_decl_opt
   in
   match inlined with
   | Some (dacc, inlined) ->
-    if !Clflags.dump_rawflambda then begin
-      Format.eprintf "@[<hov 1>INLINING@ %a@.BODY@ %a@]@.%!"
-        Code_id.print callee's_code_id
-        Expr.print inlined
-    end;
-    let expr = simplify_expr dacc inlined ~down_to_up in
-    if !Clflags.dump_rawflambda then begin
-      Format.eprintf "@[<hov 1>DONE INLINING@ %a@]@.%!"
-        Code_id.print callee's_code_id
-    end;
-    expr
+    simplify_expr dacc inlined ~down_to_up
   | None ->
     let dacc, use_id =
       match Apply.continuation apply with

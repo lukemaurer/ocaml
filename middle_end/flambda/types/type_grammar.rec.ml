@@ -179,15 +179,6 @@ let all_ids_for_export t =
   | Rec_info ty -> T_RI.all_ids_for_export ty
 
 let apply_coercion t coercion : _ Or_bottom.t =
-  (fun ans ->
-    if not (Coercion.is_id coercion) && !Clflags.dump_rawflambda then begin
-      Format.eprintf "@[<hov 1>apply_coercion@ %a@ %a@ = %a@]@.%!"
-        Coercion.print coercion
-        print t
-        (Or_bottom.print print) ans
-    end;
-    ans
-  ) @@ ( begin
   match t with
   | Value ty ->
     begin match T_V.apply_coercion ty coercion with
@@ -224,7 +215,6 @@ let apply_coercion t coercion : _ Or_bottom.t =
     | Ok ty -> Ok (Rec_info ty)
     | Bottom -> Bottom
     end
-  end : t Or_bottom.t)
 
 let eviscerate t env =
   match t with
@@ -936,32 +926,7 @@ let make_suitable_for_environment t env ~suitable_for ~bind_to =
   let level = TEEV.add_or_replace_equation level bind_to t in
   level
 
-let tracing_meets_is_on = ref false
-
-let tracing_meets () = !tracing_meets_is_on
-
-let with_tracing_meets f = Misc.protect_refs [R (tracing_meets_is_on, true)] f
-
 let meet env t1 t2 =
-  if tracing_meets () && !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>meet: %a@ ∧ %a@ = ...@]@.%!"
-      print t1
-      print t2
-  end;
-  let print_type_and_ext ppf (ty, tee) =
-    Format.fprintf ppf "@[<hov 1>%a@ with %a@]"
-      print ty
-      Typing_env_extension.print tee
-  in
-  (fun ans ->
-    if tracing_meets () && !Clflags.dump_rawflambda then begin
-      Format.eprintf "@[<hov 1>meet: %a@ ∧ %a@ = %a@]@.%!"
-        print t1
-        print t2
-        (Or_bottom.print print_type_and_ext) ans
-    end;
-    ans
-  ) @@
   match t1, t2 with
   | Value ty1, Value ty2 ->
     T_V.meet env

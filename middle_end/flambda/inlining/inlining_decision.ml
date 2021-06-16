@@ -420,14 +420,6 @@ let make_decision_for_call_site dacc ~simplify_expr ~function_decl
     | Invalid -> Rec_info_expr.do_not_inline
   in
   let inline = Apply.inline apply in
-  if !Clflags.dump_rawflambda then begin
-    let evaluated_rec_info =
-      Simplify_rec_info_expr.evaluate_rec_info_expr dacc function_decl_rec_info
-    in
-    Format.eprintf "@[<hov 1>make_decision_for_call_site@ %a@ %a@]@.%!"
-      Apply.print apply
-      Simplify_rec_info_expr.Evaluated_rec_info_expr.print evaluated_rec_info
-  end;
   match inline with
   | Never_inline -> Never_inline_attribute
   | Default_inline | Unroll _ | Always_inline | Hint_inline ->

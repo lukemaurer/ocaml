@@ -140,12 +140,7 @@ let apply_renaming (t : t) renaming : t =
     Ok (Non_inlinable (Non_inlinable.apply_renaming non_inlinable renaming))
 
 let meet (env : Meet_env.t) (t1 : t) (t2 : t)
-    : (t * TEE.t) Or_bottom.t =
-  if !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>Function_declaration_type.meet:@ %a@ ∧ %a@ = ...@]@.%!"
-      print t1
-      print t2
-  end;
+      : (t * TEE.t) Or_bottom.t =
   match t1, t2 with
   (* CR mshinwell: Try to factor out "Or_unknown_or_bottom" handling from here
      and elsewhere *)

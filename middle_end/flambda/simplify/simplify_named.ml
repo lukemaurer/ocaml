@@ -389,26 +389,9 @@ let removed_operations (named : Named.t) result =
 
 let simplify_named dacc bindable_let_bound named ~simplify_toplevel =
   try
-    if !Clflags.dump_rawflambda then begin
-      match (named : Named.t) with
-      | Static_consts _ -> ()
-      | Simple _ | Prim _ | Rec_info _ | Set_of_closures _ ->
-        Format.eprintf "@[<hov 1>simplify_named@ %a@ = %a@ -> ...@]@.%!"
-          Bindable_let_bound.print bindable_let_bound
-          Named.print named
-    end;
     let simplified_named =
       simplify_named0 ~simplify_toplevel dacc bindable_let_bound named
     in
-    if !Clflags.dump_rawflambda then begin
-      match (named : Named.t) with
-      | Static_consts _ -> ()
-      | Simple _ | Prim _ | Rec_info _ | Set_of_closures _ ->
-        Format.eprintf "@[<hov 1>simplify_named@ %a@ = %a@ -> %a@]@.%!"
-          Bindable_let_bound.print bindable_let_bound
-          Named.print named
-          Simplify_named_result.print simplified_named
-    end;
     simplified_named, removed_operations named simplified_named
   with Misc.Fatal_error -> begin
     if !Clflags.flambda_context_on_error then begin

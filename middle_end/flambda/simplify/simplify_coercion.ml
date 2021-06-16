@@ -17,18 +17,6 @@
 [@@@ocaml.warning "+a-30-40-41-42"]
 
 let simplify_coercion dacc (coercion : Coercion.t) =
-  if !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>simplify_coercion@ %a@ = ...@]@.%!"
-      Coercion.print coercion
-  end;
-  (fun ans ->
-     if !Clflags.dump_rawflambda then begin
-       Format.eprintf "@[<hov 1>simplify_simple@ %a@ = %a@]@.%!"
-         Coercion.print coercion
-         Coercion.print ans
-     end;
-     ans
-  ) @@
   match coercion with
   | Id ->
     coercion

@@ -26,20 +26,6 @@ module TE = T.Typing_env
    call [T.get_alias_exn] on the result. *)
 
 let simplify_simple dacc simple ~min_name_mode =
-  if !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>simplify_simple@ %a@ %a@ = ...@]@.%!"
-      Simple.print simple
-      Name_mode.print min_name_mode
-  end;
-  (fun ans ->
-     if !Clflags.dump_rawflambda then begin
-       Format.eprintf "@[<hov 1>simplify_simple@ %a@ %a@ = %a@]@.%!"
-         Simple.print simple
-         Name_mode.print min_name_mode
-         T.print ans
-     end;
-     ans
-  ) @@
   let typing_env = DA.typing_env dacc in
   match TE.type_simple_in_term_exn typing_env simple ~min_name_mode with
   | exception Not_found ->

@@ -121,12 +121,6 @@ end = struct
             ~suitable_for:env_inside_function
             ~bind_to:(Name.var var)
         in
-        if !Clflags.dump_rawflambda then begin
-          Format.eprintf "@[<hov 1>closure element type inside function:@ %a@ : %a@ -> %a@]@.%!"
-            Var_within_closure.print clos_var
-            Flambda_type.print type_prior_to_sets
-            Flambda_type.Typing_env_extension.With_extra_variables.print env_extension
-        end;
         let env_inside_function =
           TE.add_env_extension_with_extra_variables env_inside_function
             env_extension
@@ -321,22 +315,13 @@ end = struct
         ) closure_element_types_all_sets
       |> Depth_variable.Set.union_list
     in
-    if !Clflags.dump_rawflambda && not (closure_element_types_inside_functions_all_sets == [])
-    then begin
-      Format.eprintf
-        "@[<hov 1>closure_element_types_inside_functions_all_sets@ %a@]@.\
-         @[<hov 1>free_depth_variables@ %a@]@.%!"
-        (Format.pp_print_list (Var_within_closure.Map.print Flambda_type.print))
-          closure_element_types_inside_functions_all_sets
-        Depth_variable.Set.print free_depth_variables
-    end;
     (* Pretend that any depth variables appearing free in the closure elements
        are bound to "never inline anything" in the function. This causes them to
        be skipped over by [make_suitable_for_environment], thus avoiding dealing
        with in-types depth variables ending up in terms. *)
     (* CR lmaurer: It would be better to propagate depth variables into closures
        properly, as this would allow things like unrolling [Seq.map] where the
-       recursive call goes through a closure. For the moment, we just stop
+       recursive call goes through a closure. For the moment, we often just stop
        unrolling cold in that situation. (It's important that we use
        [Rec_info_expr.do_not_inline] here so that we don't start unrolling,
        since without propagating the rec info into the closure, we don't know
@@ -442,14 +427,6 @@ let simplify_function context ~used_closure_vars ~shareable_constants
   let name = Closure_id.to_string closure_id in
   Profile.record_call ~accumulate:true name (fun () ->
     let code_id = FD.code_id function_decl in
-    if !Clflags.dump_rawflambda then begin
-      Format.eprintf
-        "@[<hov 1>IN@ %a@ \
-         @[<hov 1>(closure_bound_names_inside_function@ %a)@]\
-         @]@.%!"
-        Function_declaration.print function_decl
-        (Closure_id.Map.print Name_in_binding_pos.print) closure_bound_names_inside_function
-    end;
     let code = DE.find_code (DA.denv (C.dacc_prior_to_sets context)) code_id in
     let params_and_body =
       Code.params_and_body_must_be_present code ~error_context:"Simplifying"
@@ -465,13 +442,6 @@ let simplify_function context ~used_closure_vars ~shareable_constants
               ~closure_bound_names_inside_function
               ~inlining_arguments:(Code.inlining_arguments code)
           in
-          if !Clflags.dump_rawflambda then begin
-            if false then
-            Format.eprintf "@[<hov 1>Environment inside function:@ %a@]@.%!"
-              DE.print (DA.denv dacc) else
-            Format.eprintf "@[<hov 1>Code:@ %a@]@.%!"
-              Code.print code
-          end;
           if not (DA.no_lifted_constants dacc) then begin
             Misc.fatal_errorf "Did not expect lifted constants in [dacc]:@ %a"
               DA.print dacc
@@ -631,11 +601,6 @@ let simplify_function context ~used_closure_vars ~shareable_constants
           (DA.denv dacc_after_body) function_decl
           rec_info
     in
-    if !Clflags.dump_rawflambda then begin
-      Format.eprintf "@[<hov 1>DONE@ %a@ %a@]@.%!"
-        Code_id.print code_id
-        Rebuilt_static_const.print code
-    end;
     { function_decl;
       new_code_id;
       code;
@@ -762,10 +727,6 @@ let simplify_set_of_closures0 dacc context set_of_closures
     Function_declarations.create all_function_decls_in_set
     |> Set_of_closures.create ~closure_elements
   in
-  if !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>code@ %a@]@.%!"
-      (Code_id.Lmap.print Rebuilt_static_const.print) code
-  end;
   { set_of_closures;
     code;
     dacc;
@@ -960,7 +921,7 @@ let type_closure_elements_and_make_lifting_decision_for_one_set dacc
      scope of the closure declaration. *)
   let closure_elements, closure_element_types, symbol_projections =
     Var_within_closure.Map.fold
-      (fun closure_var (env_entry as orig_env_entry)
+      (fun closure_var env_entry
            (closure_elements, closure_element_types, symbol_projections) ->
         let env_entry, ty, symbol_projections =
           let ty = S.simplify_simple dacc env_entry ~min_name_mode in
@@ -981,13 +942,6 @@ let type_closure_elements_and_make_lifting_decision_for_one_set dacc
           in
           simple, ty, symbol_projections
         in
-        if false && !Clflags.dump_rawflambda then begin
-          Format.eprintf "@[<hov 1>closure element %a@ ⟼ %a@ ≡ %a@ = %a@]@.%!"
-            Var_within_closure.print closure_var
-            Simple.print orig_env_entry
-            Simple.print env_entry
-            Flambda_type.print ty
-        end;
         let closure_elements =
           Var_within_closure.Map.add closure_var env_entry closure_elements
         in
@@ -1066,11 +1020,6 @@ let simplify_non_lifted_set_of_closures dacc
     type_closure_elements_and_make_lifting_decision_for_one_set dacc
       ~min_name_mode ~closure_bound_vars_inverse set_of_closures
   in
-  if !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>closure_element_types@ %a@]@.%s@.%!"
-      (Var_within_closure.Map.print Flambda_type.print) closure_element_types
-      (if can_lift then "can lift" else "can't lift")
-  end;
   if can_lift then
     simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
       ~closure_bound_vars set_of_closures ~closure_elements

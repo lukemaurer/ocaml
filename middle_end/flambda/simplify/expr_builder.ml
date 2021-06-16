@@ -38,14 +38,6 @@ let create_let uacc (bound_vars : BLB.t) defining_expr
      described in the comment at the top of [Simplify_let.rebuild_let]. *)
   let generate_phantom_lets = UA.generate_phantom_lets uacc in
   let free_names_of_body = UA.name_occurrences uacc in
-  if false && !Clflags.dump_rawflambda then begin
-    Format.eprintf
-      "@[<hov 1>create_let@ %a@ = %a@ \
-       @[<hov 1>(free_names_of_body@ %a)@]@]@.%!"
-      BLB.print bound_vars
-      Named.print defining_expr
-      Name_occurrences.print free_names_of_body
-  end;
   let bound_vars, keep_binding, let_creation_result =
     let greatest_name_mode =
       match bound_vars with

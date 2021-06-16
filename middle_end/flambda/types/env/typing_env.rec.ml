@@ -991,11 +991,6 @@ let rec add_equation0 (t:t) name ty =
   res
 
 and add_equation t name ty =
-  if !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>add_equation@ %a@ = %a@]@.%!"
-      Name.print name
-      Type_grammar.print ty
-  end;
   if !Clflags.flambda_invariant_checks then begin
     let existing_ty = find t name None in
     if not (K.equal (Type_grammar.kind existing_ty) (Type_grammar.kind ty))
@@ -1080,11 +1075,6 @@ and add_equation t name ty =
       in
       alias_of_demoted_element, t, ty
   in
-  if !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>add_equation'@ %a@ = %a@]@.%!"
-      Simple.print simple
-      Type_grammar.print ty
-  end;
   (* We have [(coerce <bare_lhs> <coercion>) : <ty>].
      Thus [<bare_lhs> : (coerce <ty> <coercion>^-1)]. *)
   let bare_lhs = Simple.without_coercion simple in
@@ -1120,19 +1110,10 @@ and add_equation t name ty =
         match Type_grammar.meet env ty existing_ty with
         | Bottom -> Type_grammar.bottom_like ty, t
         | Ok (meet_ty, env_extension) ->
-          if !Clflags.dump_rawflambda then begin
-            Format.eprintf "@[<hov 1>extension from meet:@ %a@]@.%!"
-              Typing_env_extension.print env_extension
-          end;
           meet_ty, add_env_extension t env_extension
     in
     Simple.pattern_match bare_lhs ~name ~const:(fun _ -> ty, t)
   in
-  if !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>add_equation'' @ %a@ = %a@]@.%!"
-      Simple.print bare_lhs
-      Type_grammar.print ty
-  end;
   let [@inline always] name name ~coercion =
     assert (Coercion.is_id coercion); (* true by definition *)
     add_equation0 t name ty
@@ -1433,11 +1414,6 @@ let get_canonical_simple_exn t ?min_name_mode ?name_mode_of_existing_simple
 
 let get_alias_then_canonical_simple_exn t ?min_name_mode
       ?name_mode_of_existing_simple typ =
-  if false && !Clflags.dump_rawflambda then begin
-    Format.eprintf "@[<hov 1>get_alias_then_canonical_simple_exn@ %a@ %a@]@.%!"
-      Type_grammar.print typ
-      print t
-  end;
   let simple = Type_grammar.get_alias_exn typ in
   get_canonical_simple_exn t ?min_name_mode ?name_mode_of_existing_simple
     simple

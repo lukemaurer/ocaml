@@ -220,8 +220,6 @@ module Typing_env : sig
   end
 end
 
-val with_tracing_meets : (unit -> 'a) -> 'a
-
 val meet : Typing_env.t -> t -> t -> (t * Typing_env_extension.t) Or_bottom.t
 
 val meet_shape
