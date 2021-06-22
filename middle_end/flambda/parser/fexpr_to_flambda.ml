@@ -267,7 +267,7 @@ let value_kind
       | Naked_nativeint -> Flambda_kind.naked_nativeint
     end
   | Fabricated -> Misc.fatal_error "Fabricated should not be used"
-  | Rec_info -> Flambda_kind.With_subkind.rec_info
+  | Rec_info -> Flambda_kind.rec_info
 
 let value_kind_with_subkind_opt : Fexpr.kind_with_subkind option -> Flambda_kind.With_subkind.t = function
   | Some kind -> value_kind_with_subkind kind
@@ -502,8 +502,8 @@ let apply_cont env ({ cont; args; trap_action } : Fexpr.apply_cont) =
 
 let continuation_sort (sort : Fexpr.continuation_sort) : Continuation.Sort.t =
   match sort with
-  | Normal -> Normal
-  | Exn -> Exn
+  | Normal -> Normal_or_exn
+  | Exn -> Normal_or_exn
   | Define_root_symbol -> Define_root_symbol
 
 let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =

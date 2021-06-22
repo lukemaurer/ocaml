@@ -51,16 +51,14 @@ module Sort = struct
 
   let equal t1 t2 =
     match t1, t2 with
-    | Normal, Normal
+    | Normal_or_exn, Normal_or_exn
     | Return, Return
     | Define_root_symbol, Define_root_symbol
-    | Toplevel_return, Toplevel_return
-    | Exn, Exn -> true
-    | Normal, _
+    | Toplevel_return, Toplevel_return -> true
+    | Normal_or_exn, _
     | Return, _
     | Define_root_symbol, _
-    | Toplevel_return, _
-    | Exn, _ -> false
+    | Toplevel_return, _ -> false
 end
 
 module Data = struct

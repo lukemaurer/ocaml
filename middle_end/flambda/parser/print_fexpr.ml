@@ -594,8 +594,8 @@ let inlining_state ppf is =
   (* CR lmaurer: Separate Inlining_state.t from our AST types *)
   Inlining_state.print ppf is
 
-let code_size ?prefix ?suffix () ppf code_size =
-  pp_with ?prefix ?suffix ppf "%d" code_size
+let code_size ~space ppf code_size =
+  pp_spaced ~space ppf "%d" code_size
 
 let or_blank f ppf ob =
   match ob with

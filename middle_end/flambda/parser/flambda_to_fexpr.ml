@@ -775,10 +775,9 @@ and cont_handler env cont_id (sort : Continuation.Sort.t) h =
   let is_exn_handler = Flambda.Continuation_handler.is_exn_handler h in
   let sort : Fexpr.continuation_sort option =
     match sort with
-    | Normal -> assert (not is_exn_handler); None
+    | Normal_or_exn -> None
     | Define_root_symbol -> assert (not is_exn_handler); Some Define_root_symbol
-    | Exn -> assert is_exn_handler; Some Exn
-    | Return 
+    | Return
     | Toplevel_return -> assert false
   in
   Flambda.Continuation_handler.pattern_match h

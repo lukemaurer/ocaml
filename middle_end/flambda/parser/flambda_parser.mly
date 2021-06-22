@@ -711,7 +711,6 @@ raise_kind:
 
 continuation_sort:
   | { None }
-  | KWD_EXN { Some Exn }
   | KWD_DEFINE_ROOT_SYMBOL { Some Define_root_symbol }
 ;
 
