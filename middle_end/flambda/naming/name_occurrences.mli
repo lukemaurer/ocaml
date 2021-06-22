@@ -35,7 +35,7 @@ val print : Format.formatter -> t -> unit
 
 val equal : t -> t -> bool
 
-val apply_name_permutation : t -> Name_permutation.t -> t
+val apply_renaming : t -> Renaming.t -> t
 
 val singleton_continuation : Continuation.t -> t
 
@@ -72,6 +72,10 @@ val add_code_id : t -> Code_id.t -> Name_mode.t -> t
 (** [add_newer_version_of_code_id] registers a use of a code ID occurring in a
      "newer version of" field (e.g. in [Flambda_static.Static_part.code]). *)
 val add_newer_version_of_code_id : t -> Code_id.t -> Name_mode.t -> t
+
+val singleton_depth_variable : Depth_variable.t -> t
+
+val add_depth_variable : t -> Depth_variable.t -> t
 
 val singleton_name : Name.t -> Name_mode.t -> t
 
@@ -116,6 +120,8 @@ val continuations_including_in_trap_actions : t -> Continuation.Set.t
 val closure_vars : t -> Var_within_closure.Set.t
 
 val symbols : t -> Symbol.Set.t
+
+val depth_variables : t -> Depth_variable.Set.t
 
 val code_ids : t -> Code_id.Set.t
 
@@ -197,12 +203,3 @@ val fold_code_ids
   -> init:'a
   -> f:('a -> Code_id.t -> 'a)
   -> 'a
-
-(** [import] cannot use [Ids_for_export] due to a circular dependency through
-    [Simple]. *)
-val import
-   : t
-  -> import_name:(Name.t -> Name.t)
-  -> import_continuation:(Continuation.t -> Continuation.t)
-  -> import_code_id:(Code_id.t -> Code_id.t)
-  -> t

@@ -14,8 +14,21 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
-include Numbers.Int
+module T = struct
+  include Int
+
+  let print = Numbers.Int.print
+  let output = Numbers.Int.output
+  let hash = Hashtbl.hash
+end
+
+include T
+
 type binding_time = t
+
+module Set = Patricia_tree.Make_set (T)
+module Map = Patricia_tree.Make_map (T) (Set)
+module Tbl = Identifiable.Make_tbl (T) (Map)
 
 let strictly_earlier (t : t) ~than =
   t < than
@@ -54,6 +67,16 @@ module With_name_mode = struct
     | 1 -> Name_mode.in_types
     | 2 -> Name_mode.phantom
     | _ -> assert false
+
+  let scoped_name_mode t ~min_binding_time =
+    (* Strictly before [min_binding_time] means out of scope,
+       at [min_binding_time] or later is in scope. *)
+    if (binding_time t) < earliest_var
+    || min_binding_time <= binding_time t
+    then (* Constant, symbol, or variable in the allowed scope *)
+      name_mode t
+    else (* Variable out of the allowed scope *)
+      Name_mode.in_types
 
   let print ppf t =
     Format.fprintf ppf "(bound at time %d %a)" (binding_time t)

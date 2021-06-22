@@ -1,11 +1,14 @@
 %{
 open Fexpr
 
-let make_loc (startpos, endpos) = Debuginfo.Scoped_location.of_location ~scopes:[] {
-  Location.loc_start = startpos;
-  Location.loc_end = endpos;
-  Location.loc_ghost = false;
-}
+let make_loc (startpos, endpos) =
+  Debuginfo.Scoped_location.of_location
+    ~scopes:Debuginfo.Scoped_location.empty_scopes
+    {
+      Location.loc_start = startpos;
+      Location.loc_end = endpos;
+      Location.loc_ghost = false;
+    }
 
 let make_located txt (startpos, endpos) =
   let loc = make_loc (startpos, endpos) in
@@ -147,6 +150,7 @@ let make_boxed_const_int (i, m) : static_data =
 %token KWD_POP    [@symbol "pop"]
 %token KWD_PUSH   [@symbol "push"]
 %token KWD_REC    [@symbol "rec"]
+%token KWD_REC_INFO [@symbol "rec_info"]
 %token KWD_REGULAR [@symbol "regular"]
 %token KWD_RERAISE [@symbol "reraise"]
 %token KWD_SET_OF_CLOSURES [@symbol "set_of_closures"]
@@ -276,19 +280,20 @@ code:
     exn_cont = exn_continuation_id;
     ret_arity = return_arity;
     EQUAL; body = expr;
-    { let recursive, inline, id, newer_version_of = header in
+    { let recursive, inline, id, newer_version_of, code_size = header in
       { id; newer_version_of; param_arity = None; ret_arity; recursive; inline;
         params_and_body = Present { params; closure_var; ret_cont; exn_cont;
-                                    body } } }
+                                    body };
+        code_size } }
   | header = code_header;
     KWD_DELETED;
     COLON;
     param_arity = kinds_with_subkinds;
     MINUSGREATER;
     ret_arity = kinds_with_subkinds;
-    { let recursive, inline, id, newer_version_of = header in
+    { let recursive, inline, id, newer_version_of, code_size = header in
       { id; newer_version_of; param_arity = Some param_arity;
-        ret_arity = Some ret_arity; recursive; inline;
+        ret_arity = Some ret_arity; recursive; inline; code_size;
         params_and_body = Deleted } }
 ;
 
@@ -297,8 +302,9 @@ code_header:
     recursive = recursive;
     inline = option(inline);
     id = code_id;
+    code_size = code_size;
     newer_version_of = option(newer_version_of);
-    { recursive, inline, id, newer_version_of }
+    { recursive, inline, id, newer_version_of, code_size }
 ;
 
 newer_version_of:
@@ -514,6 +520,7 @@ kind:
   | KWD_VAL { Value }
   | nnk = naked_number_kind { Naked_number nnk }
   | KWD_FABRICATED { Fabricated }
+  | KWD_REC_INFO { Rec_info }
 ;
 kind_with_subkind:
   | KWD_VAL { Any_value }
@@ -527,18 +534,18 @@ kind_with_subkind:
 kinds_with_subkinds :
   | KWD_UNIT { [] }
   | ks = separated_nonempty_list(STAR, kind_with_subkind) { ks }
-;
-return_arity:
+  ;
+  return_arity:
   | { None }
   | COLON k = kinds_with_subkinds { Some k }
-;
-kind_arg_opt:
+  ;
+  kind_arg_opt:
   | { None }
   | LBRACE; k = kind; RBRACE { Some k }
-;
+  ;
 
-/* expr is staged so that let and where play nicely together. In particular, in
-   let ... in ... where, we want the where to be on the inside so that the
+  /* expr is staged so that let and where play nicely together. In particular, in
+  let ... in ... where, we want the where to be on the inside so that the
    continuation can refer to the let-bound variables (and the defining
    expressions can't refer to continuations anyway); and in where ... where, we
    want both wheres to be at the same level (as it's easier to use parens to
@@ -550,92 +557,92 @@ kind_arg_opt:
    not a where" in a grammar, but we can get close by parameterizing let_expr by
    what nonterminal its body should be. */
 
-expr:
+   expr:
   | l = let_expr(expr) { l }
   | i = inner_expr { i }
-;
+  ;
 
-let_expr(body):
+  let_expr(body):
   | KWD_LET l = let_(body) { Let l }
   | ls = let_symbol(body) { Let_symbol ls }
-;
+  ;
 
-inner_expr:
+  inner_expr:
   | w = where_expr { w }
   | a = atomic_expr { a }
-;
+  ;
 
-where_expr:
+  where_expr:
   | body = inner_expr; KWD_WHERE; recursive = recursive;
     bindings = separated_list(KWD_ANDWHERE, continuation_binding)
-     { Let_cont { recursive; body; bindings } }
-;
+    { Let_cont { recursive; body; bindings } }
+    ;
 
-continuation_body:
+    continuation_body:
   | l = let_expr(continuation_body) { l }
   | a = atomic_expr { a }
-;
+  ;
 
-atomic_expr:
+  atomic_expr:
   | KWD_HCF { Invalid Halt_and_catch_fire }
   | KWD_UNREACHABLE { Invalid Treat_as_unreachable }
   | KWD_CONT; ac = apply_cont_expr { Apply_cont ac }
   | KWD_SWITCH; scrutinee = simple; cases = switch { Switch {scrutinee; cases} }
   | KWD_APPLY e = apply_expr { Apply e }
   | LPAREN; e = expr; RPAREN { e }
-;
+  ;
 
-let_(body):
+  let_(body):
   | bindings = separated_nonempty_list(KWD_AND, let_binding);
-(*  CR lwhite: I think this closure elements stuff is a bit of a hangover from
+  (*  CR lwhite: I think this closure elements stuff is a bit of a hangover from
     when closures definitions contained the code as well. I imagine the closures
     used to look like:
 
-    let f a b c =
-      ...
-    and g x y z =
-      ...
+let f a b c =
+  ...
+and g x y z =
+  ...
     with { i = j; ... } in
-    ...
+   ...
 
     but now they should probably just look something like:
 
-      let (f', g') = closure({f, g}, {i = j; ...}) in
-      ...
+let (f', g') = closure({f, g}, {i = j; ...}) in
+   ...
 
     lmaurer: Let_symbol_expr.t still allows code and closure definitions to be
     mutually recursive, though, so we need some syntax that bundles them
     together. Also, several closures can share the same closure elements.
  *)
-    closure_elements = with_closure_elements_opt;
+  closure_elements = with_closure_elements_opt;
     KWD_IN body = body;
     { ({ bindings; closure_elements; body } : let_) }
-;
+    ;
 
-let_binding:
+    let_binding:
   | var = variable EQUAL defining_expr = named
       { { var; defining_expr } }
-;
+      ;
 
-with_closure_elements_opt:
+      with_closure_elements_opt:
   | { None }
   | KWD_WITH LBRACE;
     elements = separated_list(SEMICOLON, closure_element);
     RBRACE;
     { Some elements }
-;
+    ;
 
-closure_element:
+    closure_element:
   | var = var_within_closure; EQUAL; value = simple; { { var; value; } }
-;
+  ;
 
-fun_decl:
+  fun_decl:
   | KWD_CLOSURE; is_tupled = boption(KWD_TUPLED); code_id = code_id;
     closure_id = closure_id_opt;
     { { code_id; closure_id; is_tupled } }
-;
+    ;
 
-apply_expr:
+    apply_expr:
   | call_kind = call_kind;
     inline = option(inline);
     inlining_state = option(inlining_state);
@@ -643,7 +650,7 @@ apply_expr:
     args = simple_args MINUSGREATER
     r = result_continuation e = exn_continuation
      { let (func, arities) = func in {
-          func;
+       func;
           continuation = r;
           exn_continuation = e;
           args = args;
@@ -651,26 +658,30 @@ apply_expr:
           inline;
           inlining_state;
           arities;
-     } }
-;
+    } }
+     ;
 
-call_kind:
+     call_kind:
   | { Function Indirect }
   | KWD_DIRECT; LPAREN; code_id = code_id; closure_id = closure_id_opt; RPAREN
     { Function (Direct { code_id; closure_id }) }
   | KWD_CCALL; noalloc = boption(KWD_NOALLOC)
-    { C_call { alloc = not noalloc } }
-;
+  { C_call { alloc = not noalloc } }
+  ;
 
-inline:
+  inline:
   | KWD_INLINE LPAREN KWD_ALWAYS RPAREN { Always_inline }
   | KWD_INLINE LPAREN KWD_HINT RPAREN { Hint_inline }
   | KWD_INLINE LPAREN KWD_NEVER RPAREN { Never_inline }
   | KWD_UNROLL LPAREN; i = plain_int; RPAREN { Unroll i }
   | KWD_INLINE LPAREN KWD_DEFAULT RPAREN { Default_inline }
 
-inlining_state:
-  | KWD_INLINING_STATE LPAREN; i = inlining_state_depth; RPAREN { Inlining_state.create ~depth:i }
+  inlining_state:
+  | KWD_INLINING_STATE LPAREN; i = inlining_state_depth; RPAREN
+    {
+      (* CR poechsel: Parse the inlining arguments *)
+      Inlining_state.create ~arguments:Inlining_arguments.unknown ~depth:i
+    }
 
 inlining_state_depth:
   | KWD_DEPTH; i = plain_int; { i }
@@ -812,6 +823,9 @@ simple:
 code_id:
   | v = variable { v }
 ;
+
+code_size:
+  | i = plain_int { i }
  
 closure_id:
   | v = variable { v }

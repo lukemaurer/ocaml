@@ -34,6 +34,8 @@ type t = private
     (** The binding of one or more symbols to statically-allocated constant(s).
         The scoping of the symbols may either be syntactic, or follow the
         dominator tree. *)
+  | Depth of Bindable_depth_variable.t
+    (** The binding of a recursion state to a depth variable. *)
 
 include Bindable.S with type t := t
 
@@ -45,6 +47,8 @@ val set_of_closures : closure_vars:Var_in_binding_pos.t list -> t
 
 val symbols : Bound_symbols.t -> Symbol_scoping_rule.t -> t
 
+val depth : Depth_variable.t -> t
+
 val must_be_singleton : t -> Var_in_binding_pos.t
 
 val must_be_singleton_opt : t -> Var_in_binding_pos.t option
@@ -53,7 +57,22 @@ val must_be_set_of_closures : t -> Var_in_binding_pos.t list
 
 val must_be_symbols : t -> symbols
 
+val must_be_depth : t -> Depth_variable.t
+
 val name_mode : t -> Name_mode.t
+
+val with_name_mode : t -> Name_mode.t -> t
+
+val exists_all_bound_vars
+   : t
+  -> f:(Var_in_binding_pos.t -> bool)
+  -> bool
+
+val fold_all_bound_vars
+   : t
+  -> init:'a
+  -> f:('a -> Var_in_binding_pos.t -> 'a)
+  -> 'a
 
 val all_bound_vars : t -> Var_in_binding_pos.Set.t
 

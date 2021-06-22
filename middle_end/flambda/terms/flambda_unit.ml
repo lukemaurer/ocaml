@@ -60,12 +60,12 @@ let print ppf
 
 let invariant _t = ()
 
-let apply_name_permutation { return_continuation; exn_continuation;
+let apply_renaming { return_continuation; exn_continuation;
                              body; module_symbol; used_closure_vars; } perm =
-  let body = Expr.apply_name_permutation body perm in
-  let module_symbol = Name_permutation.apply_symbol perm module_symbol in
-  let return_continuation = Name_permutation.apply_continuation perm return_continuation in
-  let exn_continuation = Name_permutation.apply_continuation perm exn_continuation in
+  let body = Expr.apply_renaming body perm in
+  let module_symbol = Renaming.apply_symbol perm module_symbol in
+  let return_continuation = Renaming.apply_continuation perm return_continuation in
+  let exn_continuation = Renaming.apply_continuation perm exn_continuation in
   create ~return_continuation ~exn_continuation ~body ~module_symbol ~used_closure_vars
 
 let permute_everything t =
@@ -73,12 +73,12 @@ let permute_everything t =
      that are not the module symbol can be safely permuted *)
   let current_comp_unit = Compilation_unit.get_current_exn () in
   let ids = Expr.all_ids_for_export t.body in
-  let perm = Name_permutation.empty in
+  let perm = Renaming.empty in
   let perm = Symbol.Set.fold (fun symbol perm ->
     if Symbol.in_compilation_unit symbol current_comp_unit
        && not (Symbol.equal t.module_symbol symbol) then begin
       let guaranteed_fresh = Symbol.rename symbol in
-      Name_permutation.add_fresh_symbol perm symbol ~guaranteed_fresh
+      Renaming.add_fresh_symbol perm symbol ~guaranteed_fresh
     end else
       perm
   ) ids.symbols perm
@@ -86,22 +86,22 @@ let permute_everything t =
   let perm = Code_id.Set.fold (fun code_id perm ->
     if Code_id.in_compilation_unit code_id current_comp_unit then begin
       let guaranteed_fresh = Code_id.rename code_id in
-      Name_permutation.add_fresh_code_id perm code_id ~guaranteed_fresh
+      Renaming.add_fresh_code_id perm code_id ~guaranteed_fresh
     end else
       perm
   ) ids.code_ids perm
   in
   let perm = Variable.Set.fold (fun variable perm ->
     let guaranteed_fresh = Variable.rename variable in
-    Name_permutation.add_fresh_variable perm variable ~guaranteed_fresh
+    Renaming.add_fresh_variable perm variable ~guaranteed_fresh
   ) ids.variables perm
   in
   let perm = Continuation.Set.fold (fun k perm ->
     let guaranteed_fresh = Continuation.rename k in
-    Name_permutation.add_fresh_continuation perm k ~guaranteed_fresh
+    Renaming.add_fresh_continuation perm k ~guaranteed_fresh
   ) ids.continuations perm
   in
-  apply_name_permutation t perm
+  apply_renaming t perm
 
 (* Iter on all sets of closures of a given program. *)
 (* CR mshinwell: These functions should be pushed directly into [Flambda] *)
@@ -117,14 +117,14 @@ module Iter = struct
 
   and named let_expr (bindable_let_bound : Bindable_let_bound.t) f_c f_s n =
     match (n : Named.t) with
-    | Simple _ | Prim _ -> ()
+    | Simple _ | Prim _ | Rec_info _ -> ()
     | Set_of_closures s ->
         f_s ~closure_symbols:None s
     | Static_consts consts ->
       match bindable_let_bound with
       | Symbols { bound_symbols; _ } ->
         static_consts f_c f_s bound_symbols consts
-      | Singleton _ | Set_of_closures _ ->
+      | Singleton _ | Set_of_closures _ | Depth _ ->
         Misc.fatal_errorf "[Static_const] can only be bound to [Symbols]:@ %a"
           Let.print let_expr
 
@@ -182,7 +182,7 @@ module Iter = struct
         | Present params_and_body ->
           Function_params_and_body.pattern_match params_and_body
             ~f:(fun ~return_continuation:_ _ _ ~body ~my_closure:_
-                    ~is_my_closure_used:_ ->
+                    ~is_my_closure_used:_ ~my_depth:_ ->
                 expr f_c f_s body))
       ~set_of_closures:(fun () ~closure_symbols set_of_closures ->
         f_s ~closure_symbols:(Some closure_symbols) set_of_closures)

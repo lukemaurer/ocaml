@@ -21,6 +21,10 @@
 
 type t
 
+include Contains_names.S with type t := t
+
+include Contains_ids.S with type t := t
+
 val print : Format.formatter -> t -> unit
 
 val fold
@@ -33,17 +37,17 @@ val invariant : t -> unit
 
 val empty : unit -> t
 
+val is_empty : t -> bool
+
 val one_equation : Name.t -> Type_grammar.t -> t
+
+val from_map : Type_grammar.t Name.Map.t -> t
 
 val add_or_replace_equation : t -> Name.t -> Type_grammar.t -> t
 
 val meet : Meet_env.t -> t -> t -> t Or_bottom.t
 
-(* Note: [join] takes a [Meet_env.t] argument on purpose: Typing_env_extensions
-   are created for meets, and this function is here for case where a meet
-   produces a disjunction, in which case the extensions must be joined together.
-*)
-val join : Meet_env.t -> t -> t -> t
+val join : Join_env.t -> t -> t -> t
 
 module With_extra_variables : sig
   type t

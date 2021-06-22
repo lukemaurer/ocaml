@@ -37,13 +37,13 @@ module T0 = struct
   let free_names { body; num_normal_occurrences_of_bound_vars = _; } =
     Expr.free_names body
 
-  let apply_name_permutation
+  let apply_renaming
         ({ body; num_normal_occurrences_of_bound_vars; } as t) perm =
-    let body' = Expr.apply_name_permutation body perm in
+    let body' = Expr.apply_renaming body perm in
     let changed = ref (body != body') in
     let num_normal_occurrences_of_bound_vars =
       Variable.Map.fold (fun var num result ->
-          let var' = Name_permutation.apply_variable perm var in
+          let var' = Renaming.apply_variable perm var in
           changed := !changed || (var != var');
           Variable.Map.add var' num result)
         num_normal_occurrences_of_bound_vars
@@ -54,10 +54,6 @@ module T0 = struct
 
   let all_ids_for_export { body; num_normal_occurrences_of_bound_vars = _; } =
     Expr.all_ids_for_export body
-
-  let import import_map { body; num_normal_occurrences_of_bound_vars; } =
-    let body = Expr.import import_map body in
-    { body; num_normal_occurrences_of_bound_vars; }
 end
 
 module A = Name_abstraction.Make (Bindable_let_bound) (T0)
@@ -196,7 +192,7 @@ let flatten_for_printing t =
           (Named.must_be_static_consts t.defining_expr)
       in
       Some (flattened, body)
-    | Singleton _ | Set_of_closures _ -> None)
+    | Singleton _ | Set_of_closures _ | Depth _ -> None)
 
 let print_closure_binding ppf (closure_id, sym) =
   Format.fprintf ppf "@[%a @<0>%s\u{21a4}@<0>%s %a@]"
@@ -307,8 +303,8 @@ let print_let_symbol_with_cache ~cache ppf t =
 let print_with_cache ~cache ppf
       ({ name_abstraction = _; defining_expr; } as t) =
   let let_bound_var_colour bindable_let_bound =
-    let kind = Bindable_let_bound.name_mode bindable_let_bound in
-    if Name_mode.is_phantom kind then Flambda_colours.elide ()
+    let name_mode = Bindable_let_bound.name_mode bindable_let_bound in
+    if Name_mode.is_phantom name_mode then Flambda_colours.elide ()
     else Flambda_colours.variable ()
   in
   let rec let_body (expr : Expr.t) =
@@ -317,7 +313,7 @@ let print_with_cache ~cache ppf
       pattern_match t
         ~f:(fun (bindable_let_bound : Bindable_let_bound.t) ~body ->
           match bindable_let_bound with
-          | Singleton _ | Set_of_closures _ ->
+          | Singleton _ | Set_of_closures _ | Depth _ ->
             fprintf ppf
               "@ @[<hov 1>@<0>%s%a@<0>%s =@<0>%s@ %a@]"
               (let_bound_var_colour bindable_let_bound)
@@ -332,7 +328,7 @@ let print_with_cache ~cache ppf
   pattern_match t ~f:(fun (bindable_let_bound : Bindable_let_bound.t) ~body ->
     match bindable_let_bound with
     | Symbols _ -> print_let_symbol_with_cache ~cache ppf t
-    | Singleton _ | Set_of_closures _ ->
+    | Singleton _ | Set_of_closures _ | Depth _ ->
       fprintf ppf "@[<v 1>(@<0>%slet@<0>%s@ (@[<v 0>\
           @[<hov 1>@<0>%s%a@<0>%s =@<0>%s@ %a@]"
         (Flambda_colours.expr_keyword ())
@@ -402,13 +398,20 @@ let invariant env t =
         let var = VB.var var in
         Simple.pattern_match simple
           ~const:(fun const -> E.add_variable env var (T.kind_for_const const))
-          ~name:(fun name -> E.add_variable env var (E.kind_of_name env name))
+          ~name:(fun name ~coercion:_ -> E.add_variable env var (E.kind_of_name env name))
       | Static_consts _, Symbols _ -> env
       | Static_consts _, Singleton _ ->
         Misc.fatal_errorf "Cannot bind a [Static_const] to a [Singleton]:@ %a"
           print t
-      | (Simple _ | Prim _ | Set_of_closures _), Symbols _ ->
+      | (Simple _ | Prim _ | Set_of_closures _ | Rec_info _), Symbols _ ->
         Misc.fatal_errorf "Cannot bind a non-[Static_const] to [Symbols]:@ %a"
+          print t
+      | Rec_info _, Depth _ -> env
+      | Rec_info _, Singleton _ ->
+        Misc.fatal_errorf "Cannot bind a [Rec_info] to non-[Depth]:@ %a"
+          print t
+      | (Simple _ | Prim _ | Set_of_closures _ | Static_consts _), Depth _ ->
+        Misc.fatal_errorf "Cannot bind a non-[Rec_info] to [Depth]:@ %a"
           print t
     in
     Expr.invariant env body)
@@ -432,9 +435,9 @@ let free_names
       (Name_occurrences.union from_defining_expr from_body)
       from_bindable)
 
-let apply_name_permutation ({ name_abstraction; defining_expr; } as t) perm =
-  let name_abstraction' = A.apply_name_permutation name_abstraction perm in
-  let defining_expr' = Named.apply_name_permutation defining_expr perm in
+let apply_renaming ({ name_abstraction; defining_expr; } as t) perm =
+  let name_abstraction' = A.apply_renaming name_abstraction perm in
+  let defining_expr' = Named.apply_renaming defining_expr perm in
   if name_abstraction == name_abstraction' && defining_expr == defining_expr'
   then t
   else
@@ -446,8 +449,3 @@ let all_ids_for_export { name_abstraction; defining_expr; } =
   let defining_expr_ids = Named.all_ids_for_export defining_expr in
   let name_abstraction_ids = A.all_ids_for_export name_abstraction in
   Ids_for_export.union defining_expr_ids name_abstraction_ids
-
-let import import_map { name_abstraction; defining_expr; } =
-  let defining_expr = Named.import import_map defining_expr in
-  let name_abstraction = A.import import_map name_abstraction in
-  { name_abstraction; defining_expr; }

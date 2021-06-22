@@ -208,12 +208,12 @@ let rec reload env i before =
   match i.desc with
     Iend ->
       (i, before, env)
-  | Ireturn _ | Iop(Itailcall_ind _) | Iop(Itailcall_imm _) ->
+  | Ireturn _ | Iop Itailcall_ind | Iop(Itailcall_imm _) ->
       let env, i =
         add_reloads env (Reg.inter_set_array before i.arg) i
       in
        (i, Reg.Set.empty, env)
-  | Iop(Icall_ind _ | Icall_imm _ | Iextcall { alloc = true; }) ->
+  | Iop(Icall_ind | Icall_imm _ | Iextcall { alloc = true; }) ->
       (* All regs live across must be spilled *)
       let (new_next, finally, env) = reload env i.next i.live in
       let env, i =
@@ -423,20 +423,26 @@ let initial_env (reload_env : reload_env) =
 
 type spill_cache_entry =
   { at_exit_restricted : (int * Reg.Set.t) list;
+    after_handler : Reg.Set.t;
     result : (instruction * Reg.Set.t);
   }
 
 let spill_cache : spill_cache_entry Numbers.Int.Map.t ref =
   ref Numbers.Int.Map.empty
 
-let cache_spill_result nfail env handler before_handler =
+let cache_spill_result nfail env after_handler handler before_handler =
   let at_exit_restricted =
     List.filter (fun (n, _at_exit) ->
         Numbers.Int.Set.mem n
           (Numbers.Int.Map.find nfail env.free_conts_for_handlers))
       env.at_exit
   in
-  let entry = { at_exit_restricted; result = (handler, before_handler); } in
+  let entry =
+    { at_exit_restricted;
+      after_handler;
+      result = (handler, before_handler);
+    }
+  in
   spill_cache := Numbers.Int.Map.add nfail entry !spill_cache
 
 let spill_reg_no_add (env : spill_env) r =
@@ -456,12 +462,13 @@ let at_raise_from_trap_stack env ts =
   | Generic_trap _ -> env.last_regular_trywith_handler
   | Specific_trap (nfail, _) -> find_spill_at_exit env nfail
 
-let find_in_spill_cache nfail env =
+let find_in_spill_cache nfail at_join env =
   try
-    let { at_exit_restricted; result; } =
+    let { at_exit_restricted; after_handler; result; } =
       Numbers.Int.Map.find nfail !spill_cache
     in
-    if List.for_all (fun (n, at_exit) ->
+    if Reg.Set.subset at_join after_handler
+    && List.for_all (fun (n, at_exit) ->
         Reg.Set.subset (find_spill_at_exit env n) at_exit)
       at_exit_restricted
     then Some result
@@ -480,7 +487,7 @@ let rec spill :
   match i.desc with
     Iend ->
       k i finally
-  | Ireturn _ | Iop(Itailcall_ind _) | Iop(Itailcall_imm _) ->
+  | Ireturn _ | Iop Itailcall_ind | Iop(Itailcall_imm _) ->
       k i Reg.Set.empty
   | Iop Ireload ->
     spill env i.next finally (fun new_next after ->
@@ -492,8 +499,8 @@ let rec spill :
       let before1 = Reg.diff_set_array after i.res in
       let before =
         match i.desc with
-          Iop Icall_ind _ | Iop(Icall_imm _) | Iop(Iextcall _) | Iop(Ialloc _)
-        | Iop(Iintop (Icheckbound _)) | Iop(Iintop_imm((Icheckbound _), _)) ->
+          Iop Icall_ind | Iop(Icall_imm _) | Iop(Iextcall _) | Iop(Ialloc _)
+        | Iop(Iintop Icheckbound) | Iop(Iintop_imm(Icheckbound, _)) ->
             Reg.Set.union before1 env.at_raise
         | _ ->
             before1 in
@@ -556,10 +563,10 @@ let rec spill :
                             catch = true;
                  }
                in
-               match find_in_spill_cache nfail env with
+               match find_in_spill_cache nfail at_join env with
                | None ->
                  spill env handler at_join (fun handler before_handler ->
-                   cache_spill_result nfail env handler before_handler;
+                   cache_spill_result nfail env at_join handler before_handler;
                    handler, before_handler)
                | Some result -> result)
             handlers
@@ -630,7 +637,6 @@ let fundecl f =
     fun_body = new_body;
     fun_codegen_options = f.fun_codegen_options;
     fun_dbg  = f.fun_dbg;
-    fun_spacetime_shape = f.fun_spacetime_shape;
     fun_num_stack_slots = f.fun_num_stack_slots;
     fun_contains_calls = f.fun_contains_calls;
   })

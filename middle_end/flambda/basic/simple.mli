@@ -23,15 +23,19 @@ include module type of struct include Reg_width_things.Simple end
 
 include Contains_names.S with type t := t
 
-val merge_rec_info : t -> newer_rec_info:Rec_info.t option -> t option
+val has_coercion : t -> bool
 
-val without_rec_info : t -> t
+val apply_coercion : t -> Coercion.t -> t option
 
-val must_be_var : t -> Variable.t option
+val apply_coercion_exn : t -> Coercion.t -> t
 
-val must_be_symbol : t -> Symbol.t option
+val without_coercion : t -> t
 
-val must_be_name : t -> Name.t option
+val must_be_var : t -> (Variable.t * Coercion.t) option
+
+val must_be_symbol : t -> (Symbol.t * Coercion.t) option
+
+val must_be_name : t -> (Name.t * Coercion.t) option
 
 (** The constant representating the given number of type "int". *)
 val const_int : Targetint.OCaml.t -> t
@@ -62,14 +66,6 @@ val const_unit : t
 
 val const_from_descr : Reg_width_const.Descr.t -> t
 
-val map_name : t -> f:(Name.t -> Name.t) -> t
-
-val to_name : t -> (Rec_info.t option * Name.t) option
-
-(* CR mshinwell: remove these next two? *)
-val map_var : t -> f:(Variable.t -> Variable.t) -> t
-val map_symbol : t -> f:(Symbol.t -> Symbol.t) -> t
-
 val is_const : t -> bool
 
 val is_symbol : t -> bool
@@ -80,8 +76,8 @@ val free_names_in_types : t -> Name_occurrences.t
 
 val pattern_match'
    : t
-  -> var:(Variable.t -> 'a)
-  -> symbol:(Symbol.t -> 'a)
+  -> var:(Variable.t -> coercion:Coercion.t -> 'a)
+  -> symbol:(Symbol.t -> coercion:Coercion.t -> 'a)
   -> const:(Reg_width_const.t -> 'a)
   -> 'a
 
@@ -89,12 +85,6 @@ module List : sig
   type nonrec t = t list
 
   include Contains_names.S with type t := t
-  include Identifiable.S with type t := t
-end
-
-module Pair : sig
-  type nonrec t = t * t
-
   include Identifiable.S with type t := t
 end
 

@@ -12,6 +12,11 @@ let eqtrue (b:bool) = b
 let eqftffff =
   function (false,true,false,false,false,false) -> true | _ -> false
 
+let eqfun delayed_check =
+  match delayed_check () with
+  | exception Invalid_argument _ -> true
+  | _ -> false
+
 let x = [1;2;3]
 
 let f x = 1 :: 2 :: 3 :: x
@@ -32,6 +37,9 @@ let mkleftlist len =
   let l = ref Nil in
   for i = 1 to len do l := Cons(!l, i) done;
   !l
+
+(* use an existential to check equality with different tags *)
+type any = Any : 'a -> any
 
 let _ =
   test 1 eq0 (compare 0 0);
@@ -72,8 +80,15 @@ let _ =
   test 36 eqm1 (compare (0.0, nan) (0.0, 0.0));
   test 37 eqm1 (compare (0.0, nan) (0.0, neg_infinity));
   test 38 eq0 (compare (nan, 0.0) (nan, 0.0));
-  let cmpgen x y = (x=y, x<>y, x<y, x<=y, x>y, x>=y) in
-  let cmpfloat (x:float) (y:float) = (x=y, x<>y, x<y, x<=y, x>y, x>=y) in
+
+  (* Force inline these functions to allow evaluation of the comparisons at
+     compile time by the middle end. *)
+  let [@inline always] cmpgen x y =
+    (x=y, x<>y, x<y, x<=y, x>y, x>=y)
+  in
+  let [@inline always] cmpfloat (x:float) (y:float) =
+    (x=y, x<>y, x<y, x<=y, x>y, x>=y)
+  in
   test 39 eqftffff (cmpgen nan nan);
   test 40 eqftffff (cmpgen nan 0.0);
   test 41 eqftffff (cmpfloat nan nan);
@@ -81,21 +96,21 @@ let _ =
   test 43 eqtrue ([||] = [||]);
   (* Convoluted forms to test both the "positive" and "negative" cases
      of float tests *)
-  let cmpfloatpos (x:float) (y:float) =
+  let [@inline always] cmpfloatpos (x:float) (y:float) =
     ((let r = ref false in (if x = y then r := true); !r),
      (let r = ref false in (if x <> y then r := true); !r),
      (let r = ref false in (if x < y then r := true); !r),
      (let r = ref false in (if x <= y then r := true); !r),
      (let r = ref false in (if x > y then r := true); !r),
      (let r = ref false in (if x >= y then r := true); !r))
-  and cmpfloatneg (x:float) (y:float) =
+  and [@inline always] cmpfloatneg (x:float) (y:float) =
     ((let r = ref true in (if not (x = y) then r := false); !r),
      (let r = ref true in (if not (x <> y) then r := false); !r),
      (let r = ref true in (if not (x < y) then r := false); !r),
      (let r = ref true in (if not (x <= y) then r := false); !r),
      (let r = ref true in (if not (x > y) then r := false); !r),
      (let r = ref true in (if not (x >= y) then r := false); !r)) in
-  let testcmpfloat x y =
+  let [@inline always] testcmpfloat x y =
     cmpfloatpos x y = cmpgen x y &&
     cmpfloatneg x y = cmpgen x y in
   test 50 eqtrue (testcmpfloat nan nan);
@@ -103,4 +118,64 @@ let _ =
   test 52 eqtrue (testcmpfloat 0.0 nan);
   test 53 eqtrue (testcmpfloat 0.0 0.0);
   test 54 eqtrue (testcmpfloat 1.0 0.0);
-  test 55 eqtrue (testcmpfloat 0.0 1.0)
+  test 55 eqtrue (testcmpfloat 0.0 1.0);
+
+  (* Prevent inlining of these functions to force evaluation of the comparisons
+     at runtime and test the corresponding code generation. *)
+  let [@inline never] cmpgen x y =
+    (x=y, x<>y, x<y, x<=y, x>y, x>=y)
+  in
+  let [@inline never] cmpfloat (x:float) (y:float) =
+    (x=y, x<>y, x<y, x<=y, x>y, x>=y)
+  in
+  test 56 eqftffff (cmpgen nan nan);
+  test 57 eqftffff (cmpgen nan 0.0);
+  test 58 eqftffff (cmpfloat nan nan);
+  test 59 eqftffff (cmpfloat nan 0.0);
+  test 60 eqtrue ([||] = [||]);
+  let [@inline never] cmpfloatpos (x:float) (y:float) =
+    ((let r = ref false in (if x = y then r := true); !r),
+     (let r = ref false in (if x <> y then r := true); !r),
+     (let r = ref false in (if x < y then r := true); !r),
+     (let r = ref false in (if x <= y then r := true); !r),
+     (let r = ref false in (if x > y then r := true); !r),
+     (let r = ref false in (if x >= y then r := true); !r))
+  and [@inline never] cmpfloatneg (x:float) (y:float) =
+    ((let r = ref true in (if not (x = y) then r := false); !r),
+     (let r = ref true in (if not (x <> y) then r := false); !r),
+     (let r = ref true in (if not (x < y) then r := false); !r),
+     (let r = ref true in (if not (x <= y) then r := false); !r),
+     (let r = ref true in (if not (x > y) then r := false); !r),
+     (let r = ref true in (if not (x >= y) then r := false); !r)) in
+  let [@inline never] testcmpfloat x y =
+    cmpfloatpos x y = cmpgen x y &&
+    cmpfloatneg x y = cmpgen x y in
+  test 61 eqtrue (testcmpfloat nan nan);
+  test 62 eqtrue (testcmpfloat nan 0.0);
+  test 63 eqtrue (testcmpfloat 0.0 nan);
+  test 64 eqtrue (testcmpfloat 0.0 0.0);
+  test 65 eqtrue (testcmpfloat 1.0 0.0);
+  test 66 eqtrue (testcmpfloat 0.0 1.0);
+  
+  test 67 eqfun (fun () -> compare (fun x -> x) (fun x -> x));
+  test 68 eqfun (fun () ->
+   
+  (* #9521 *)
+  let rec f x = g x and g x = f x in compare f g);
+
+  (* this is the current behavior of comparison
+     with values of incoherent types (packed below
+     an existential), but it may not be the only specification. *)
+  test 69 eqm1
+    (compare (Any 0) (Any 2));
+  begin
+    (* comparing two function fails *)
+    test 70 eqfun (fun () ->
+      compare (Any (fun x -> x)) (Any (fun x -> x + 1)));
+    (* comparing a function and a non-function succeeds *)
+    test 71 (Fun.negate eq0)
+      (compare (Any (fun x -> x)) (Any 0));
+    test 72 (Fun.negate eq0)
+      (compare (Any 0) (Any (fun x -> x)));
+  end;
+  ()

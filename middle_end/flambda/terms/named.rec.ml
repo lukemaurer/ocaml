@@ -14,18 +14,20 @@
 (*                                                                        *)
 (**************************************************************************)
 
-[@@@ocaml.warning "+a-4-30-40-41-42"]
+[@@@ocaml.warning "+a-30-40-41-42"]
 
 type t =
   | Simple of Simple.t
   | Prim of Flambda_primitive.t * Debuginfo.t
   | Set_of_closures of Set_of_closures.t
   | Static_consts of Static_const.Group.t
+  | Rec_info of Rec_info_expr.t
 
 let create_simple simple = Simple simple
 let create_prim prim dbg = Prim (prim, dbg)
 let create_set_of_closures set_of_closures = Set_of_closures set_of_closures
 let create_static_consts consts = Static_consts consts
+let create_rec_info rec_info_expr = Rec_info rec_info_expr
 
 let print_with_cache ~cache ppf (t : t) =
   match t with
@@ -40,6 +42,8 @@ let print_with_cache ~cache ppf (t : t) =
     Set_of_closures.print_with_cache ~cache ppf set_of_closures
   | Static_consts consts ->
     Static_const.Group.print_with_cache ~cache ppf consts
+  | Rec_info rec_info_expr ->
+    Rec_info_expr.print_with_cache ~cache ppf rec_info_expr
 
 let print ppf t = print_with_cache ~cache:(Printing_cache.create ()) ppf t
 
@@ -62,6 +66,8 @@ let invariant_returning_kind env t : Flambda_primitive.result_kind =
       (* CR mshinwell: This isn't really right, there can be multiple
          constants *)
       Singleton K.value
+    | Rec_info _ ->
+      Singleton K.rec_info
   with Misc.Fatal_error ->
     Misc.fatal_errorf "(during invariant checks) Context is:@ %a" print t
 
@@ -74,25 +80,30 @@ let free_names t =
   | Prim (prim, _dbg) -> Flambda_primitive.free_names prim
   | Set_of_closures set -> Set_of_closures.free_names set
   | Static_consts consts -> Static_const.Group.free_names consts
+  | Rec_info rec_info_expr -> Rec_info_expr.free_names rec_info_expr
 
-let apply_name_permutation t perm =
+let apply_renaming t perm =
   match t with
   | Simple simple ->
-    let simple' = Simple.apply_name_permutation simple perm in
+    let simple' = Simple.apply_renaming simple perm in
     if simple == simple' then t
     else Simple simple'
   | Prim (prim, dbg) ->
-    let prim' = Flambda_primitive.apply_name_permutation prim perm in
+    let prim' = Flambda_primitive.apply_renaming prim perm in
     if prim == prim' then t
     else Prim (prim', dbg)
   | Set_of_closures set ->
-    let set' = Set_of_closures.apply_name_permutation set perm in
+    let set' = Set_of_closures.apply_renaming set perm in
     if set == set' then t
     else Set_of_closures set'
   | Static_consts consts ->
-    let consts' = Static_const.Group.apply_name_permutation consts perm in
+    let consts' = Static_const.Group.apply_renaming consts perm in
     if consts == consts' then t
     else Static_consts consts'
+  | Rec_info rec_info_expr ->
+    let rec_info_expr' = Rec_info_expr.apply_renaming rec_info_expr perm in
+    if rec_info_expr == rec_info_expr' then t
+    else Rec_info rec_info_expr'
 
 let all_ids_for_export t =
   match t with
@@ -100,21 +111,7 @@ let all_ids_for_export t =
   | Prim (prim, _dbg) -> Flambda_primitive.all_ids_for_export prim
   | Set_of_closures set -> Set_of_closures.all_ids_for_export set
   | Static_consts consts -> Static_const.Group.all_ids_for_export consts
-
-let import import_map t =
-  match t with
-  | Simple simple ->
-    let simple = Ids_for_export.Import_map.simple import_map simple in
-    Simple simple
-  | Prim (prim, dbg) ->
-    let prim = Flambda_primitive.import import_map prim in
-    Prim (prim, dbg)
-  | Set_of_closures set ->
-    let set = Set_of_closures.import import_map set in
-    Set_of_closures set
-  | Static_consts consts ->
-    let consts = Static_const.Group.import import_map consts in
-    Static_consts consts
+  | Rec_info rec_info_expr -> Rec_info_expr.all_ids_for_export rec_info_expr
 
 let box_value name (kind : Flambda_kind.t) dbg : t * Flambda_kind.t =
   let simple = Simple.name name in
@@ -132,6 +129,8 @@ let box_value name (kind : Flambda_kind.t) dbg : t * Flambda_kind.t =
     Prim (Unary (Box_number Naked_nativeint, simple), dbg), K.value
   | Fabricated ->
     Misc.fatal_error "Cannot box values of [Fabricated] kind"
+  | Rec_info ->
+    Misc.fatal_error "Cannot box values of [Rec_info] kind"
 
 let unbox_value name (kind : Flambda_kind.t) dbg : t * Flambda_kind.t =
   let simple = Simple.name name in
@@ -149,7 +148,9 @@ let unbox_value name (kind : Flambda_kind.t) dbg : t * Flambda_kind.t =
     Prim (Unary (Unbox_number Naked_nativeint, simple), dbg),
       K.naked_nativeint
   | Fabricated ->
-    Misc.fatal_error "Cannot box values of [Fabricated] kind"
+    Misc.fatal_error "Cannot unbox values of [Fabricated] kind"
+  | Rec_info ->
+    Misc.fatal_error "Cannot unbox values of [Rec_info] kind"
 
 let at_most_generative_effects (t : t) =
   match t with
@@ -157,6 +158,7 @@ let at_most_generative_effects (t : t) =
   | Prim (prim, _) -> Flambda_primitive.at_most_generative_effects prim
   | Set_of_closures _ -> true
   | Static_consts _ -> true
+  | Rec_info _ -> true
 
 let dummy_value (kind : K.t) : t =
   let simple =
@@ -174,21 +176,22 @@ let dummy_value (kind : K.t) : t =
     | Naked_number Naked_nativeint ->
       Simple.const (Reg_width_const.naked_nativeint Targetint.zero)
     | Fabricated -> Misc.fatal_error "[Fabricated] kind not expected here"
+    | Rec_info -> Misc.fatal_error "[Rec_info] kind not expected here"
   in
   Simple simple
 
 let is_dynamically_allocated_set_of_closures t =
   match t with
   | Set_of_closures _ -> true
-  | Simple _ | Prim _ | Static_consts _ -> false
+  | Simple _ | Prim _ | Static_consts _ | Rec_info _ -> false
 
 let is_static_consts t =
   match t with
   | Static_consts _ -> true
-  | Simple _ | Prim _ | Set_of_closures _ -> false
+  | Simple _ | Prim _ | Set_of_closures _ | Rec_info _ -> false
 
 let must_be_static_consts t =
   match t with
   | Static_consts consts -> consts
-  | Simple _ | Prim _ | Set_of_closures _ ->
+  | Simple _ | Prim _ | Set_of_closures _ | Rec_info _ ->
     Misc.fatal_errorf "Must be [Static_consts], but is not: %a" print t

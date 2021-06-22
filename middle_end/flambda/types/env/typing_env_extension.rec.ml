@@ -49,6 +49,11 @@ let invariant { equations; } =
 
 let empty () = { equations = Name.Map.empty; }
 
+let is_empty { equations } = Name.Map.is_empty equations
+
+let from_map equations =
+  { equations; }
+
 let one_equation name ty =
   Type_grammar.check_equation name ty;
   { equations = Name.Map.singleton name ty; }
@@ -67,6 +72,30 @@ let add_or_replace_equation t name ty =
       Type_grammar.print ty
   end;
   { equations = Name.Map.add name ty t.equations; }
+
+let all_ids_for_export { equations; } =
+  Name.Map.fold (fun name ty acc ->
+    let acc = Ids_for_export.union (Type_grammar.all_ids_for_export ty) acc in
+    Ids_for_export.add_name acc name
+  ) equations Ids_for_export.empty
+
+let free_names { equations; } =
+  Name.Map.fold (fun name ty acc ->
+    let acc = Name_occurrences.union acc (Type_grammar.free_names ty) in
+    Name_occurrences.add_name acc name Name_mode.in_types
+  ) equations Name_occurrences.empty
+
+let apply_renaming ({ equations; } as t) perm =
+  let changed = ref false in
+  let equations' =
+    Name.Map.fold (fun name ty acc ->
+      let ty' = Type_grammar.apply_renaming ty perm in
+      let name' = Renaming.apply_name perm name in
+      if not (ty == ty' && name == name') then changed := true;
+      Name.Map.add name' ty' acc
+    ) equations Name.Map.empty
+  in
+  if !changed then { equations = equations'; } else t
 
 exception Bottom_meet
 
@@ -113,16 +142,12 @@ let meet env t1 t2 : _ Or_bottom.t =
   with Bottom_meet -> Bottom
 
 let join env t1 t2 =
-  let env = Meet_env.env env in
-  let join_env =
-    Join_env.create env ~left_env:env ~right_env:env
-  in
   let equations =
     Name.Map.merge (fun _name ty1_opt ty2_opt ->
         match ty1_opt, ty2_opt with
         | None, _ | _, None -> None
         | Some ty1, Some ty2 ->
-          begin match Type_grammar.join join_env ty1 ty2 with
+          begin match Type_grammar.join env ty1 ty2 with
           | Known ty -> Some ty
           | Unknown -> None
           end)

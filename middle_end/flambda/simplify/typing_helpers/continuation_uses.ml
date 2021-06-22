@@ -16,8 +16,8 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-module DE = Simplify_envs.Downwards_env
-module LCS = Simplify_envs.Lifted_constant_state
+module DE = Downwards_env
+module LCS = Lifted_constant_state
 module T = Flambda_type
 module TE = Flambda_type.Typing_env
 module U = One_continuation_use
@@ -84,6 +84,20 @@ let number_of_uses t = List.length t.uses
 let arity t = t.arity
 
 let get_uses t = t.uses
+
+let get_arg_types_by_use_id t =
+  List.fold_left (fun args use ->
+    List.map2 (fun arg_map arg_type ->
+      let env_at_use = U.env_at_use use in
+      let typing_env = DE.typing_env env_at_use in
+      let arg_at_use : Continuation_env_and_param_types.arg_at_use =
+        { arg_type; typing_env; }
+      in
+      Apply_cont_rewrite_id.Map.add (U.id use) arg_at_use arg_map)
+      args
+      (U.arg_types use))
+    (List.map (fun _ -> Apply_cont_rewrite_id.Map.empty) t.arity)
+    t.uses
 
 let simple_join typing_env uses ~params =
   (* This join is intended to be sufficient to match Closure + Cmmgen
@@ -163,29 +177,27 @@ Format.eprintf "%d uses for %a\n%!"
 Format.eprintf "Unknown at or later than %a\n%!"
   Scope.print (Scope.next definition_scope_level);
 *)
-    let handler_env, extra_params_and_args, is_single_inlinable_use,
-        is_single_use =
+    let handler_env, extra_params_and_args, is_single_inlinable_use, escapes =
       match use_envs_with_ids with
-      | [use_env, _, Inlinable]
-          when not (Continuation.is_exn t.continuation) ->
+      | [use_env, _, Inlinable] ->
         (* We need to make sure any lifted constants generated during the
            simplification of the body are in the environment.  Otherwise
            we might share a constant based on information in [DA] but then
            find the definition of the corresponding constant isn't in [DE].
            Note that some of the constants may already be defined. *)
         let use_env =
-          DE.add_lifted_constants ~maybe_already_defined:() use_env
+          LCS.add_to_denv ~maybe_already_defined:() use_env
             consts_lifted_during_body
         in
-        use_env, Continuation_extra_params_and_args.empty, true, true
-      | [] | [_, _, (Inlinable | Non_inlinable)]
-      | (_, _, (Inlinable | Non_inlinable)) :: _ ->
+        use_env, Continuation_extra_params_and_args.empty, true, false
+      | [] | [_, _, (Non_inlinable _)]
+      | (_, _, (Inlinable | Non_inlinable _)) :: _ ->
         (* The lifted constants are put into the fork environment now because
            it overall makes things easier; the join operation can just discard
            any equation about a lifted constant (any such equation could not be
            materially more precise anyway). *)
         let denv =
-          DE.add_lifted_constants env_at_fork_plus_params_and_consts
+          LCS.add_to_denv env_at_fork_plus_params_and_consts
             consts_lifted_during_body
         in
         let extra_lifted_consts_in_use_envs =
@@ -274,34 +286,27 @@ Format.eprintf "The extra params and args are:@ %a\n%!"
             TE.with_code_age_relation handler_env
               code_age_relation_after_body)
         in
-        let is_single_use =
-          match uses with
-          | [_] -> true
-          | [] | _::_::_ -> false
-        in
         match use_envs_with_ids with
         | [_, _, Inlinable] -> assert false  (* handled above *)
-        | [] | [_, _, Non_inlinable]
-        | (_, _, (Inlinable | Non_inlinable)) :: _ ->
-          denv, extra_params_and_args, false, is_single_use
+        | [] | [_, _, Non_inlinable _]
+        | (_, _, (Inlinable | Non_inlinable _)) :: _ ->
+          let escapes =
+            List.exists
+              (fun (_, _, (cont_use_kind : Continuation_use_kind.t)) ->
+                match cont_use_kind with
+                | Inlinable | Non_inlinable { escaping = false; } -> false
+                | Non_inlinable { escaping = true; } -> true)
+              use_envs_with_ids
+          in
+          denv, extra_params_and_args, false, escapes
     in
-    let arg_types_by_use_id =
-      List.fold_left (fun args use ->
-          List.map2 (fun arg_map arg_type ->
-              Apply_cont_rewrite_id.Map.add (U.id use)
-                (DE.typing_env (U.env_at_use use), arg_type)
-                arg_map)
-            args
-            (U.arg_types use))
-        (List.map (fun _ -> Apply_cont_rewrite_id.Map.empty) t.arity)
-        uses
-    in
+    let arg_types_by_use_id = get_arg_types_by_use_id t in
     Uses {
       handler_env;
       arg_types_by_use_id;
       extra_params_and_args;
       is_single_inlinable_use;
-      is_single_use;
+      escapes;
     }
 
 let get_typing_env_no_more_than_one_use t =

@@ -113,9 +113,6 @@ and dump_flexpect = ref false           (* -dflexpect *)
 and dump_instr = ref false              (* -dinstr *)
 and keep_camlprimc_file = ref false     (* -dcamlprimc *)
 
-and dump_ilambda = ref false
-and dump_prepared_lambda = ref false
-
 let keep_asm_file = ref false           (* -S *)
 let optimize_for_speed = ref true       (* -compact *)
 and opaque = ref false                  (* -opaque *)
@@ -180,7 +177,8 @@ let unsafe_string =
   else ref (not Config.default_safe_string)
                                    (* -safe-string / -unsafe-string *)
 
-let inlining_report = ref false    (* -inlining-report *)
+let inlining_report = ref false     (* -inlining-report *)
+let inlining_report_bin = ref false (* -inlining-report-bin *)
 
 let afl_instrument = ref Config.afl_instrument (* -afl-instrument *)
 let afl_inst_ratio = ref 100           (* -afl-inst-ratio *)
@@ -197,30 +195,35 @@ let rounds () =
   | None -> !default_simplify_rounds
   | Some r -> r
 
-let default_inline_threshold = 10. /. 8.
+let default_inline_threshold = 10.
 let inline_toplevel_multiplier = 16
 let default_inline_toplevel_threshold =
   int_of_float ((float inline_toplevel_multiplier) *. default_inline_threshold)
-let default_inline_call_cost = 5
-let default_inline_alloc_cost = 7
-let default_inline_prim_cost = 3
-let default_inline_branch_cost = 5
-let default_inline_indirect_cost = 4
+let default_inline_call_cost = 5. /. 8.
+let default_inline_alloc_cost = 7. /. 8.
+let default_inline_prim_cost = 3. /. 8.
+let default_inline_branch_cost = 5. /. 8.
+let default_inline_indirect_call_cost = 4. /. 8.
+let default_inline_poly_compare_cost = 10. /. 8.
 let default_inline_branch_factor = 0.1
 let default_inline_lifting_benefit = 1300
 let default_inline_max_unroll = 0
 let default_inline_max_depth = 1
+let default_inline_small_function_size = 10
+let default_inline_large_function_size = 10
 
 let inline_threshold = ref (Float_arg_helper.default default_inline_threshold)
 let inline_toplevel_threshold =
   ref (Int_arg_helper.default default_inline_toplevel_threshold)
-let inline_call_cost = ref (Int_arg_helper.default default_inline_call_cost)
-let inline_alloc_cost = ref (Int_arg_helper.default default_inline_alloc_cost)
-let inline_prim_cost = ref (Int_arg_helper.default default_inline_prim_cost)
+let inline_call_cost = ref (Float_arg_helper.default default_inline_call_cost)
+let inline_alloc_cost = ref (Float_arg_helper.default default_inline_alloc_cost)
+let inline_prim_cost = ref (Float_arg_helper.default default_inline_prim_cost)
 let inline_branch_cost =
-  ref (Int_arg_helper.default default_inline_branch_cost)
-let inline_indirect_cost =
-  ref (Int_arg_helper.default default_inline_indirect_cost)
+  ref (Float_arg_helper.default default_inline_branch_cost)
+let inline_indirect_call_cost =
+  ref (Float_arg_helper.default default_inline_indirect_call_cost)
+let inline_poly_compare_cost =
+  ref (Float_arg_helper.default default_inline_poly_compare_cost)
 let inline_branch_factor =
   ref (Float_arg_helper.default default_inline_branch_factor)
 let inline_lifting_benefit =
@@ -229,6 +232,10 @@ let inline_max_unroll =
   ref (Int_arg_helper.default default_inline_max_unroll)
 let inline_max_depth =
   ref (Int_arg_helper.default default_inline_max_depth)
+let inline_small_function_size =
+  ref (Int_arg_helper.default default_inline_small_function_size)
+let inline_large_function_size =
+  ref (Int_arg_helper.default default_inline_large_function_size)
 
 
 let unbox_specialised_args = ref true   (* -no-unbox-specialised-args *)
@@ -240,17 +247,20 @@ let unbox_closures_factor =
 let remove_unused_arguments = ref false (* -remove-unused-arguments *)
 
 type inlining_arguments = {
-  inline_call_cost : int option;
-  inline_alloc_cost : int option;
-  inline_prim_cost : int option;
-  inline_branch_cost : int option;
-  inline_indirect_cost : int option;
+  inline_call_cost : float option;
+  inline_alloc_cost : float option;
+  inline_prim_cost : float option;
+  inline_branch_cost : float option;
+  inline_indirect_call_cost : float option;
+  inline_poly_compare_cost : float option;
   inline_lifting_benefit : int option;
   inline_branch_factor : float option;
   inline_max_depth : int option;
   inline_max_unroll : int option;
   inline_threshold : float option;
   inline_toplevel_threshold : int option;
+  inline_small_function_size : int option;
+  inline_large_function_size : int option;
 }
 
 let set_int_arg round (arg:Int_arg_helper.parsed ref) default value =
@@ -282,13 +292,15 @@ let set_float_arg round (arg:Float_arg_helper.parsed ref) default value =
 let use_inlining_arguments_set ?round (arg:inlining_arguments) =
   let set_int = set_int_arg round in
   let set_float = set_float_arg round in
-  set_int inline_call_cost default_inline_call_cost arg.inline_call_cost;
-  set_int inline_alloc_cost default_inline_alloc_cost arg.inline_alloc_cost;
-  set_int inline_prim_cost default_inline_prim_cost arg.inline_prim_cost;
-  set_int inline_branch_cost
+  set_float inline_call_cost default_inline_call_cost arg.inline_call_cost;
+  set_float inline_alloc_cost default_inline_alloc_cost arg.inline_alloc_cost;
+  set_float inline_prim_cost default_inline_prim_cost arg.inline_prim_cost;
+  set_float inline_branch_cost
     default_inline_branch_cost arg.inline_branch_cost;
-  set_int inline_indirect_cost
-    default_inline_indirect_cost arg.inline_indirect_cost;
+  set_float inline_indirect_call_cost
+    default_inline_indirect_call_cost arg.inline_indirect_call_cost;
+  set_float inline_poly_compare_cost
+    default_inline_poly_compare_cost arg.inline_poly_compare_cost;
   set_int inline_lifting_benefit
     default_inline_lifting_benefit arg.inline_lifting_benefit;
   set_float inline_branch_factor
@@ -300,7 +312,11 @@ let use_inlining_arguments_set ?round (arg:inlining_arguments) =
   set_float inline_threshold
     default_inline_threshold arg.inline_threshold;
   set_int inline_toplevel_threshold
-    default_inline_toplevel_threshold arg.inline_toplevel_threshold
+    default_inline_toplevel_threshold arg.inline_toplevel_threshold;
+  set_int inline_small_function_size
+    default_inline_small_function_size arg.inline_small_function_size;
+  set_int inline_large_function_size
+    default_inline_large_function_size arg.inline_large_function_size
 
 (* o1 is the default *)
 let o1_arguments = {
@@ -308,13 +324,16 @@ let o1_arguments = {
   inline_alloc_cost = None;
   inline_prim_cost = None;
   inline_branch_cost = None;
-  inline_indirect_cost = None;
+  inline_indirect_call_cost = None;
+  inline_poly_compare_cost = None;
   inline_lifting_benefit = None;
   inline_branch_factor = None;
   inline_max_depth = None;
   inline_max_unroll = None;
   inline_threshold = None;
   inline_toplevel_threshold = None;
+  inline_small_function_size = None;
+  inline_large_function_size = None;
 }
 
 let classic_arguments = {
@@ -322,7 +341,8 @@ let classic_arguments = {
   inline_alloc_cost = None;
   inline_prim_cost = None;
   inline_branch_cost = None;
-  inline_indirect_cost = None;
+  inline_indirect_call_cost = None;
+  inline_poly_compare_cost = None;
   inline_lifting_benefit = None;
   inline_branch_factor = None;
   inline_max_depth = None;
@@ -330,37 +350,53 @@ let classic_arguments = {
   (* [inline_threshold] matches the current compiler's default.
      Note that this particular fraction can be expressed exactly in
      floating point. *)
-  inline_threshold = Some (10. /. 8.);
+  inline_threshold = Some (10.);
   (* [inline_toplevel_threshold] is not used in classic mode. *)
   inline_toplevel_threshold = Some 1;
+  (* We set the small and large function sizes to the same value here to
+     recover "classic mode" semantics (no speculative inlining). *)
+  inline_small_function_size = Some default_inline_small_function_size;
+  inline_large_function_size = Some default_inline_small_function_size;
 }
 
 let o2_arguments = {
-  inline_call_cost = Some (2 * default_inline_call_cost);
-  inline_alloc_cost = Some (2 * default_inline_alloc_cost);
-  inline_prim_cost = Some (2 * default_inline_prim_cost);
-  inline_branch_cost = Some (2 * default_inline_branch_cost);
-  inline_indirect_cost = Some (2 * default_inline_indirect_cost);
+  inline_call_cost = Some (2.0 *. default_inline_call_cost);
+  inline_alloc_cost = Some (2.0 *. default_inline_alloc_cost);
+  inline_prim_cost = Some (2.0 *. default_inline_prim_cost);
+  inline_branch_cost = Some (2.0 *. default_inline_branch_cost);
+  inline_indirect_call_cost = Some (2.0 *. default_inline_indirect_call_cost);
+  inline_poly_compare_cost = Some (2.0 *. default_inline_poly_compare_cost);
+  (* CR mshinwell: We should review these other parameters to determine
+     which ones are still needed for Flambda 2. *)
   inline_lifting_benefit = None;
   inline_branch_factor = None;
   inline_max_depth = Some 2;
   inline_max_unroll = None;
   inline_threshold = Some 25.;
   inline_toplevel_threshold = Some (25 * inline_toplevel_multiplier);
+  inline_small_function_size =
+    Some (2 * default_inline_small_function_size);
+  inline_large_function_size =
+    Some (4 * default_inline_large_function_size);
 }
 
 let o3_arguments = {
-  inline_call_cost = Some (3 * default_inline_call_cost);
-  inline_alloc_cost = Some (3 * default_inline_alloc_cost);
-  inline_prim_cost = Some (3 * default_inline_prim_cost);
-  inline_branch_cost = Some (3 * default_inline_branch_cost);
-  inline_indirect_cost = Some (3 * default_inline_indirect_cost);
+  inline_call_cost = Some (3.0 *. default_inline_call_cost);
+  inline_alloc_cost = Some (3.0 *. default_inline_alloc_cost);
+  inline_prim_cost = Some (3.0 *. default_inline_prim_cost);
+  inline_branch_cost = Some (3.0 *. default_inline_branch_cost);
+  inline_indirect_call_cost = Some (3.0 *. default_inline_indirect_call_cost);
+  inline_poly_compare_cost = Some (3.0 *. default_inline_poly_compare_cost);
   inline_lifting_benefit = None;
   inline_branch_factor = Some 0.;
   inline_max_depth = Some 3;
   inline_max_unroll = Some 1;
   inline_threshold = Some 50.;
   inline_toplevel_threshold = Some (50 * inline_toplevel_multiplier);
+  inline_small_function_size =
+    Some (3 * default_inline_small_function_size);
+  inline_large_function_size =
+    Some (8 * default_inline_large_function_size);
 }
 
 let flambda_unicode = ref true
@@ -436,8 +472,8 @@ module Flambda = struct
     let fallback_inlining_heuristic = ref false
     let inline_effects_in_cmm = ref false
     let phantom_lets = ref true
-    let max_inlining_depth = ref 1
     let max_block_size_for_projections = ref None
+    let max_unboxing_depth = ref 3
   end
 
   module Debug = struct
@@ -476,7 +512,48 @@ module Flambda = struct
     Expert.fallback_inlining_heuristic := false;
     backend_cse_at_toplevel := false;
     ()
+end
 
+(* This is used by the -save-ir-after option. *)
+module Compiler_ir = struct
+  type t = Linear
+
+  let all = [
+    Linear;
+  ]
+
+  let extension t =
+    let ext =
+    match t with
+      | Linear -> "linear"
+    in
+    ".cmir-" ^ ext
+
+  (** [extract_extension_with_pass filename] returns the IR whose extension
+      is a prefix of the extension of [filename], and the suffix,
+      which can be used to distinguish different passes on the same IR.
+      For example, [extract_extension_with_pass "foo.cmir-linear123"]
+      returns [Some (Linear, "123")]. *)
+  let extract_extension_with_pass filename =
+    let ext = Filename.extension filename in
+    let ext_len = String.length ext in
+    if ext_len <= 0 then None
+    else begin
+      let is_prefix ir =
+        let s = extension ir in
+        let s_len = String.length s in
+        s_len <= ext_len && s = String.sub ext 0 s_len
+      in
+      let drop_prefix ir =
+        let s = extension ir in
+        let s_len = String.length s in
+        String.sub ext s_len (ext_len - s_len)
+      in
+      let ir = List.find_opt is_prefix all in
+      match ir with
+      | None -> None
+      | Some ir -> Some (ir, drop_prefix ir)
+    end
 end
 
 (* This is used by the -stop-after option. *)
@@ -486,40 +563,62 @@ module Compiler_pass = struct
      - the manpages in man/ocaml{c,opt}.m
      - the manual manual/manual/cmds/unified-options.etex
   *)
-  type t = Parsing | Typing | Scheduling
+  type t = Parsing | Typing | Scheduling | Emit
 
   let to_string = function
     | Parsing -> "parsing"
     | Typing -> "typing"
     | Scheduling -> "scheduling"
+    | Emit -> "emit"
 
   let of_string = function
     | "parsing" -> Some Parsing
     | "typing" -> Some Typing
     | "scheduling" -> Some Scheduling
+    | "emit" -> Some Emit
     | _ -> None
 
   let rank = function
     | Parsing -> 0
     | Typing -> 1
     | Scheduling -> 50
+    | Emit -> 60
 
   let passes = [
     Parsing;
     Typing;
     Scheduling;
+    Emit;
   ]
   let is_compilation_pass _ = true
   let is_native_only = function
     | Scheduling -> true
+    | Emit -> true
     | _ -> false
 
   let enabled is_native t = not (is_native_only t) || is_native
+  let can_save_ir_after = function
+    | Scheduling -> true
+    | _ -> false
 
-  let available_pass_names ~native =
+  let available_pass_names ~filter ~native =
     passes
     |> List.filter (enabled native)
+    |> List.filter filter
     |> List.map to_string
+
+  let compare a b =
+    compare (rank a) (rank b)
+
+  let to_output_filename t ~prefix =
+    match t with
+    | Scheduling -> prefix ^ Compiler_ir.(extension Linear)
+    | _ -> Misc.fatal_error "Not supported"
+
+  let of_input_filename name =
+    match Compiler_ir.extract_extension_with_pass name with
+    | Some (Linear, _) -> Some Emit
+    | None -> None
 end
 
 let stop_after = ref None (* -stop-after *)
@@ -530,6 +629,21 @@ let should_stop_after pass =
     match !stop_after with
     | None -> false
     | Some stop -> Compiler_pass.rank stop <= Compiler_pass.rank pass
+
+let save_ir_after = ref []
+
+let should_save_ir_after pass =
+  List.mem pass !save_ir_after
+
+let set_save_ir_after pass enabled =
+  let other_passes = List.filter ((<>) pass) !save_ir_after in
+  let new_passes =
+    if enabled then
+      pass :: other_passes
+    else
+      other_passes
+  in
+  save_ir_after := new_passes
 
 module String = Misc.Stdlib.String
 

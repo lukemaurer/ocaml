@@ -55,6 +55,10 @@ val name_abstraction : unit -> string
 
 val rec_info : unit -> string
 
+val coercion : unit -> string
+
+val depth_variable : unit -> string
+
 val elide : unit -> string
 
 val error : unit -> string

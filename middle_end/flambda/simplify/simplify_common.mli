@@ -18,8 +18,10 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
+open! Flambda
+
 type 'a after_rebuild =
-     Flambda.Expr.t
+     Rebuilt_expr.t
   -> Upwards_acc.t
   -> 'a
 
@@ -36,15 +38,25 @@ type ('a, 'b) down_to_up =
 type 'a expr_simplifier =
      Downwards_acc.t
   -> 'a
-  -> down_to_up:(Flambda.Expr.t * Upwards_acc.t,
-       Flambda.Expr.t * Upwards_acc.t) down_to_up
-  -> Flambda.Expr.t * Upwards_acc.t
+  -> down_to_up:(Rebuilt_expr.t * Upwards_acc.t,
+       Rebuilt_expr.t * Upwards_acc.t) down_to_up
+  -> Rebuilt_expr.t * Upwards_acc.t
 
-val rebuild_invalid : (Flambda.Expr.t * Upwards_acc.t) rebuild
+type simplify_toplevel =
+     Downwards_acc.t
+  -> Expr.t
+  -> return_continuation:Continuation.t
+  -> return_arity:Flambda_arity.With_subkinds.t
+  -> Exn_continuation.t
+  -> return_cont_scope:Scope.t
+  -> exn_cont_scope:Scope.t
+  -> Rebuilt_expr.t * Upwards_acc.t
+
+val is_self_tail_call : Downwards_acc.t -> Apply_expr.t -> bool
 
 val simplify_projection
    : Downwards_acc.t
-  -> original_term:Flambda.Named.t
+  -> original_term:Named.t
   -> deconstructing:Flambda_type.t
   -> shape:Flambda_type.t
   -> result_var:Var_in_binding_pos.t
@@ -52,42 +64,6 @@ val simplify_projection
   -> Simplified_named.t
      * Flambda_type.Typing_env_extension.t
      * Downwards_acc.t
-
-type cse =
-  | Invalid of Flambda_type.t
-  (* CR mshinwell: Use a record type for the following and all of the
-     simplify_*primitive.mli files *)
-  | Applied of
-      (Simplified_named.t * Flambda_type.Typing_env_extension.t
-        * Simple.t list * Downwards_acc.t)
-  | Not_applied of Downwards_acc.t
-
-val try_cse
-   : Downwards_acc.t
-  -> original_prim:Flambda_primitive.t
-  -> result_kind:Flambda_kind.t
-  -> min_name_mode:Name_mode.t
-  -> args:Simple.t list
-  -> result_var:Variable.t
-  -> cse
-
-type add_wrapper_for_switch_arm_result = private
-  | Apply_cont of Flambda.Apply_cont.t
-  | New_wrapper of Continuation.t * Flambda.Continuation_handler.t
-
-val add_wrapper_for_switch_arm
-   : Upwards_acc.t
-  -> Flambda.Apply_cont.t
-  -> use_id:Apply_cont_rewrite_id.t
-  -> Flambda_arity.With_subkinds.t
-  -> add_wrapper_for_switch_arm_result
-
-val add_wrapper_for_fixed_arity_apply
-   : Upwards_acc.t
-  -> use_id:Apply_cont_rewrite_id.t
-  -> Flambda_arity.With_subkinds.t
-  -> Apply_expr.t
-  -> Flambda.Expr.t
 
 val update_exn_continuation_extra_args
    : Upwards_acc.t
@@ -102,11 +78,25 @@ val project_tuple
   -> size:int
   -> field:int
   -> Simple.t
-  -> Flambda.Named.t
+  -> Named.t
 
 (** Split a direct over-application into a full application followed by
     the application of the leftover arguments. *)
 val split_direct_over_application
   : Apply_expr.t
  -> param_arity:Flambda_arity.With_subkinds.t
- -> Flambda.Expr.t
+ -> Expr.t
+
+type apply_cont_context =
+  | Apply_cont_expr
+  | Switch_branch
+
+val apply_cont_use_kind
+   : context:apply_cont_context
+  -> Apply_cont.t
+  -> Continuation_use_kind.t
+
+val clear_demoted_trap_action
+   : Upwards_acc.t
+  -> Apply_cont.t
+  -> Apply_cont.t

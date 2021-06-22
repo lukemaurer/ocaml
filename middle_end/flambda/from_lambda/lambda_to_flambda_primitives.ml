@@ -16,7 +16,6 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-open! Flambda.Import
 
 module C = Lambda_conversions
 module H = Lambda_to_flambda_primitives_helpers
@@ -157,26 +156,36 @@ let bigstring_ref ~size_int access_size arg1 arg2 dbg : H.expr_primitive =
   }
 
 let bigarray_box_raw_value_read kind =
+  let error what =
+    Misc.fatal_errorf
+      "Don't know how to unbox %s to store it in a bigarray"
+      what
+  in
   match P.element_kind_of_bigarray_kind kind with
   | Value -> Fun.id
   | Naked_number k ->
     let bi = K.Boxable_number.of_naked_number_kind k in
     fun arg -> H.Unary (Box_number bi, Prim arg)
   | Fabricated ->
-    Misc.fatal_errorf
-      "Don't know how to unbox a fabricated expression to \
-       store it in a bigarray"
+    error "a fabricated expression"
+  | Rec_info ->
+    error "recursion info"
 
 let bigarray_unbox_value_to_store kind =
+  let error what =
+    Misc.fatal_errorf
+      "Don't know how to unbox %s to store it in a bigarray"
+      what
+  in
   match P.element_kind_of_bigarray_kind kind with
   | Value -> Fun.id
   | Naked_number k ->
     let bi = K.Boxable_number.of_naked_number_kind k in
     fun arg -> H.Prim (Unary (Unbox_number bi, arg))
   | Fabricated ->
-    Misc.fatal_errorf
-      "Don't know how to unbox a fabricated expression to \
-       store it in a bigarray"
+    error "a fabricated expression"
+  | Rec_info ->
+    error "recursion info"
 
 let bigarray_dim_bound b dimension =
   H.Prim (Unary (Bigarray_length { dimension }, b))
@@ -548,7 +557,7 @@ let convert_lprim ~backend (prim : L.primitive) (args : Simple.t list)
   (* CR mshinwell: To do: | Pbittest, [arg1; arg2] -> *)
   (*   Binary (Bit_test, arg1, arg2) *)
 
-  | Pflambda_isint, [arg] ->
+  | Pisint, [arg] ->
     tag_int (Unary (Is_int, arg))
   | Pgettag, [arg] ->
     tag_int (Unary (Get_tag, arg))
@@ -910,11 +919,11 @@ let convert_lprim ~backend (prim : L.primitive) (args : Simple.t list)
     | None, _ ->
       Misc.fatal_errorf
         "Lambda_to_flambda_primitives.convert_lprim: Pbigarrayref primitives \
-         with an unknown kind should have been removed by Prepare_lambda."
+         with an unknown kind should have been removed by Lambda_to_flambda."
     | _, None ->
       Misc.fatal_errorf
         "Lambda_to_flambda_primitives.convert_lprim: Pbigarrayref primitives \
-         with an unknown layout should have been removed by Prepare_lambda."
+         with an unknown layout should have been removed by Lambda_to_flambda."
     end
   | Pbigarrayset (unsafe, num_dimensions, kind, layout), args ->
     begin match C.convert_bigarray_kind kind,
@@ -934,11 +943,11 @@ let convert_lprim ~backend (prim : L.primitive) (args : Simple.t list)
     | None, _ ->
       Misc.fatal_errorf
         "Lambda_to_flambda_primitives.convert_lprim: Pbigarrayref primitives \
-         with an unknown kind should have been removed by Prepare_lambda."
+         with an unknown kind should have been removed by Lambda_to_flambda."
     | _, None ->
       Misc.fatal_errorf
         "Lambda_to_flambda_primitives.convert_lprim: Pbigarrayref primitives \
-         with an unknown layout should have been removed by Prepare_lambda."
+         with an unknown layout should have been removed by Lambda_to_flambda."
     end
   | Pbigarraydim dimension, [arg] ->
     tag_int (Unary (Bigarray_length { dimension; }, arg))
@@ -1019,15 +1028,15 @@ let convert_lprim ~backend (prim : L.primitive) (args : Simple.t list)
     | Psetglobal _ | Praise _ | Pccall _
     ), _ ->
     Misc.fatal_errorf "Closure_conversion.convert_primitive: \
-        Primitive %a (%a) shouldn't be here, either a bug in [Prepare_lambda] \
-        or [Closure_conversion] or the wrong number of arguments"
+        Primitive %a (%a) shouldn't be here, either a bug in \
+        [Closure_conversion] or the wrong number of arguments"
       Printlambda.primitive prim
       H.print_list_of_simple_or_prim args
   | ( Pfield _ | Pnegint | Pnot | Poffsetint _ | Pintoffloat | Pfloatofint
     | Pnegfloat | Pabsfloat | Pstringlength | Pbyteslength | Pgettag
     | Pbintofint _ | Pintofbint _ | Pnegbint _ | Popaque | Pduprecord _
     | Parraylength _ | Pduparray _ | Pfloatfield _ | Pcvtbint _ | Poffsetref _
-    | Pbswap16 | Pbbswap _ | Pisint | Pflambda_isint | Pint_as_pointer
+    | Pbswap16 | Pbbswap _ | Pisint | Pint_as_pointer
     | Pbigarraydim _
     ),
     ([] |  _ :: _ :: _) ->
@@ -1066,19 +1075,23 @@ let convert_lprim ~backend (prim : L.primitive) (args : Simple.t list)
       Printlambda.primitive prim
       H.print_list_of_simple_or_prim args
   | ( Pidentity | Pignore | Prevapply | Pdirapply | Psequand | Psequor
-    | Pbytes_of_string | Pbytes_to_string | Pisint
+    | Pbytes_of_string | Pbytes_to_string
     ), _ ->
     Misc.fatal_errorf "[%a] should have been removed by \
-      [Prepare_lambda.prepare]"
+      [Lambda_to_flambda.transform_primitive]"
       Printlambda.primitive prim
   | Pgetglobal _, _ ->
     Misc.fatal_errorf "[%a] should have been handled by \
       [Closure_conversion.close_primitive]"
       Printlambda.primitive prim
 
-let convert_and_bind ~backend exn_cont ~register_const_string
+module Acc = Closure_conversion_aux.Acc
+module Expr_with_acc = Closure_conversion_aux.Expr_with_acc
+
+let convert_and_bind acc ~backend exn_cont ~register_const_string
       (prim : L.primitive) ~(args : Simple.t list) (dbg : Debuginfo.t)
-      (cont : Named.t option -> Expr.t) : Expr.t =
+      (cont : Acc.t -> Flambda.Named.t option -> Acc.t * Expr_with_acc.t)
+  : Acc.t * Expr_with_acc.t =
   let expr = convert_lprim ~backend prim args dbg in
-  H.bind_rec ~backend exn_cont ~register_const_string expr dbg
-    (fun named -> cont (Some named))
+  H.bind_rec acc ~backend exn_cont ~register_const_string expr dbg
+    (fun acc named -> cont acc (Some named))

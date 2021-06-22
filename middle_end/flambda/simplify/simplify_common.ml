@@ -16,10 +16,21 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
-open! Simplify_import
+open! Flambda
+
+module DA = Downwards_acc
+module DE = Downwards_env
+module K = Flambda_kind
+module KP = Kinded_parameter
+module P = Flambda_primitive
+module T = Flambda_type
+module TEE = T.Typing_env_extension
+module UA = Upwards_acc
+module UE = Upwards_env
+module AC = Apply_cont_expr
 
 type 'a after_rebuild =
-     Flambda.Expr.t
+     Rebuilt_expr.t
   -> Upwards_acc.t
   -> 'a
 
@@ -36,12 +47,48 @@ type ('a, 'b) down_to_up =
 type 'a expr_simplifier =
      Downwards_acc.t
   -> 'a
-  -> down_to_up:(Flambda.Expr.t * Upwards_acc.t,
-       Flambda.Expr.t * Upwards_acc.t) down_to_up
-  -> Flambda.Expr.t * Upwards_acc.t
+  -> down_to_up:(Rebuilt_expr.t * Upwards_acc.t,
+       Rebuilt_expr.t * Upwards_acc.t) down_to_up
+  -> Rebuilt_expr.t * Upwards_acc.t
 
-let rebuild_invalid uacc ~after_rebuild =
-  after_rebuild (Expr.create_invalid ()) uacc
+type simplify_toplevel =
+     Downwards_acc.t
+  -> Expr.t
+  -> return_continuation:Continuation.t
+  -> return_arity:Flambda_arity.With_subkinds.t
+  -> Exn_continuation.t
+  -> return_cont_scope:Scope.t
+  -> exn_cont_scope:Scope.t
+  -> Rebuilt_expr.t * Upwards_acc.t
+
+let is_self_tail_call dacc apply =
+  let denv = DA.denv dacc in
+  match DE.closure_info denv with
+  | Not_in_a_closure -> false
+  | In_a_set_of_closures_but_not_yet_in_a_specific_closure ->
+    (* It's safe to return false here (even, though this should
+       not happen) *)
+    false
+  | Closure { code_id = fun_code_id;
+              return_continuation = fun_cont;
+              exn_continuation = fun_exn_cont; } ->
+    (* 1st check: exn continuations match *)
+    let apply_exn_cont = Apply.exn_continuation apply in
+    Exn_continuation.equal fun_exn_cont apply_exn_cont &&
+    (* 2nd check: return continuations match *)
+    begin match Apply.continuation apply with
+    (* a function that raises unconditionally can be a tail-call *)
+    | Never_returns -> true
+    | Return apply_cont -> Continuation.equal fun_cont apply_cont
+    end &&
+    (* 3rd check: check this is a self-call. *)
+    begin match Apply.call_kind apply with
+    | Function (Direct { code_id = apply_code_id; _ }) ->
+      Code_id.equal fun_code_id apply_code_id
+    | Method _ | C_call _
+    | Function (Indirect_known_arity _ | Indirect_unknown_arity)
+      -> false
+    end
 
 let simplify_projection dacc ~original_term ~deconstructing ~shape ~result_var
       ~result_kind =
@@ -50,168 +97,6 @@ let simplify_projection dacc ~original_term ~deconstructing ~shape ~result_var
   | Bottom -> Simplified_named.invalid (), TEE.empty (), dacc
   | Ok env_extension ->
     Simplified_named.reachable original_term, env_extension, dacc
-
-type cse =
-  | Invalid of T.t
-  | Applied of (Simplified_named.t * TEE.t * Simple.t list * DA.t)
-  | Not_applied of DA.t
-
-let apply_cse dacc ~original_prim =
-  match P.Eligible_for_cse.create original_prim with
-  | None -> None
-  | Some with_fixed_value ->
-    match DE.find_cse (DA.denv dacc) with_fixed_value with
-    | None -> None
-    | Some simple ->
-      match TE.get_canonical_simple_exn (DA.typing_env dacc) simple with
-      | exception Not_found -> None
-      | simple -> Some simple
-
-let try_cse dacc ~original_prim ~result_kind ~min_name_mode ~args
-      ~result_var : cse =
-  (* CR mshinwell: Use [meet] and [reify] for CSE?  (discuss with lwhite) *)
-  if not (Name_mode.equal min_name_mode Name_mode.normal) then Not_applied dacc
-  else
-    match apply_cse dacc ~original_prim with
-    | Some replace_with ->
-      let named = Named.create_simple replace_with in
-      let ty = T.alias_type_of result_kind replace_with in
-      let env_extension = TEE.one_equation (Name.var result_var) ty in
-      Applied (Simplified_named.reachable named, env_extension, args, dacc)
-    | None ->
-      let dacc =
-        match P.Eligible_for_cse.create original_prim with
-        | None -> dacc
-        | Some eligible_prim ->
-          let bound_to = Simple.var result_var in
-          DA.map_denv dacc ~f:(fun denv ->
-            DE.add_cse denv eligible_prim ~bound_to)
-      in
-      Not_applied dacc
-
-type add_wrapper_for_fixed_arity_continuation0_result =
-  | This_continuation of Continuation.t
-  | Apply_cont of Flambda.Apply_cont.t
-  | New_wrapper of Continuation.t * Flambda.Continuation_handler.t
-
-type cont_or_apply_cont =
-  | Continuation of Continuation.t
-  | Apply_cont of Apply_cont.t
-
-let add_wrapper_for_fixed_arity_continuation0 uacc cont_or_apply_cont
-      ~use_id arity : add_wrapper_for_fixed_arity_continuation0_result =
-  let uenv = UA.uenv uacc in
-  let cont =
-    match cont_or_apply_cont with
-    | Continuation cont -> cont
-    | Apply_cont apply_cont -> Apply_cont.continuation apply_cont
-  in
-  let original_cont = cont in
-  let cont = UE.resolve_continuation_aliases uenv cont in
-  match UE.find_apply_cont_rewrite uenv original_cont with
-  | None -> This_continuation cont
-  | Some rewrite when Apply_cont_rewrite.does_nothing rewrite ->
-    (* CR mshinwell: think more about this check w.r.t. subkinds *)
-    let arity = Flambda_arity.With_subkinds.to_arity arity in
-    let arity_in_rewrite =
-      Apply_cont_rewrite.original_params_arity rewrite
-      |> Flambda_arity.With_subkinds.to_arity
-    in
-    if not (Flambda_arity.equal arity arity_in_rewrite) then begin
-      Misc.fatal_errorf "Arity %a provided to fixed-arity-wrapper \
-          addition function does not match arity %a in rewrite:@ %a"
-        Flambda_arity.print arity
-        Flambda_arity.print arity_in_rewrite
-        Apply_cont_rewrite.print rewrite
-    end;
-    This_continuation cont
-  | Some rewrite ->
-    (* CR-someday mshinwell: This area should be improved and hence
-       simplified.  Allowing [Apply] to take extra arguments is probably the
-       way forward.  Although unboxing of variants requires untagging
-       expressions to be inserted, so wrappers cannot always be avoided. *)
-    let params = List.map (fun _kind -> Variable.create "param") arity in
-    let kinded_params = List.map2 KP.create params arity in
-    let new_wrapper expr ~free_names =
-      let new_cont = Continuation.create () in
-      let new_handler =
-        Continuation_handler.create kinded_params ~handler:expr
-          ~free_names_of_handler:free_names
-          ~is_exn_handler:false
-      in
-      New_wrapper (new_cont, new_handler)
-    in
-    match cont_or_apply_cont with
-    | Continuation cont ->
-      (* In this case, any generated [Apply_cont] will sit inside a wrapper
-         that binds [kinded_params]. *)
-      let args = List.map KP.simple kinded_params in
-      let apply_cont = Apply_cont.create cont ~args ~dbg:Debuginfo.none in
-      begin match Apply_cont_rewrite.rewrite_use rewrite use_id apply_cont with
-      | Apply_cont apply_cont ->
-        new_wrapper (Expr.create_apply_cont apply_cont)
-          ~free_names:(Known (Apply_cont.free_names apply_cont))
-      | Expr build_expr ->
-        let expr, free_names =
-          build_expr ~apply_cont_to_expr:(fun apply_cont ->
-            Expr.create_apply_cont apply_cont, Apply_cont.free_names apply_cont)
-        in
-        new_wrapper expr ~free_names:(Known free_names)
-      end
-    | Apply_cont apply_cont ->
-      let apply_cont = Apply_cont.update_continuation apply_cont cont in
-      match Apply_cont_rewrite.rewrite_use rewrite use_id apply_cont with
-      | Apply_cont apply_cont -> Apply_cont apply_cont
-      | Expr build_expr ->
-        let expr, free_names =
-          build_expr ~apply_cont_to_expr:(fun apply_cont ->
-            Expr.create_apply_cont apply_cont, Apply_cont.free_names apply_cont)
-        in
-        new_wrapper expr ~free_names:(Known free_names)
-
-type add_wrapper_for_switch_arm_result =
-  | Apply_cont of Flambda.Apply_cont.t
-  | New_wrapper of Continuation.t * Flambda.Continuation_handler.t
-
-let add_wrapper_for_switch_arm uacc apply_cont ~use_id arity
-      : add_wrapper_for_switch_arm_result =
-  match
-    add_wrapper_for_fixed_arity_continuation0 uacc (Apply_cont apply_cont)
-      ~use_id arity
-  with
-  | This_continuation cont ->
-    Apply_cont (Apply_cont.update_continuation apply_cont cont)
-  | Apply_cont apply_cont -> Apply_cont apply_cont
-  | New_wrapper (cont, wrapper) -> New_wrapper (cont, wrapper)
-
-let add_wrapper_for_fixed_arity_continuation uacc cont ~use_id arity ~around =
-  match
-    add_wrapper_for_fixed_arity_continuation0 uacc (Continuation cont)
-      ~use_id arity
-  with
-  | This_continuation cont -> around cont
-  | Apply_cont _ -> assert false
-  | New_wrapper (new_cont, new_handler) ->
-    let body = around new_cont in
-    Let_cont.create_non_recursive new_cont new_handler ~body
-      ~free_names_of_body:(Known (Expr.free_names body))
-
-let add_wrapper_for_fixed_arity_apply uacc ~use_id arity apply =
-  match Apply.continuation apply with
-  | Never_returns ->
-    Expr.create_apply apply
-  | Return cont ->
-    add_wrapper_for_fixed_arity_continuation uacc cont
-      ~use_id arity
-      ~around:(fun return_cont ->
-        let exn_cont =
-          UE.resolve_exn_continuation_aliases (UA.uenv uacc)
-            (Apply.exn_continuation apply)
-        in
-        let apply =
-          Apply.with_continuations apply (Return return_cont) exn_cont
-        in
-        Expr.create_apply apply)
 
 let update_exn_continuation_extra_args uacc ~exn_cont_use_id apply =
   let exn_cont_rewrite =
@@ -222,7 +107,7 @@ let update_exn_continuation_extra_args uacc ~exn_cont_use_id apply =
   | None -> apply
   | Some rewrite ->
     Apply.with_exn_continuation apply
-      (Apply_cont_rewrite.rewrite_exn_continuation rewrite exn_cont_use_id
+      (Expr_builder.rewrite_exn_continuation rewrite exn_cont_use_id
         (Apply.exn_continuation apply))
 
 (* generate the projection of the i-th field of a n-tuple *)
@@ -276,3 +161,50 @@ let split_direct_over_application apply ~param_arity =
       ~free_names_of_body:(Known (Apply.free_names full_apply))
   in
   expr
+
+type apply_cont_context =
+  | Apply_cont_expr
+  | Switch_branch
+
+let apply_cont_use_kind ~context apply_cont : Continuation_use_kind.t =
+  (* CR mshinwell: Is [Continuation.sort] reliable enough to detect
+     the toplevel continuation?  Probably not -- we should store it in
+     the environment. *)
+  let default : Continuation_use_kind.t =
+    match context with
+    | Apply_cont_expr -> Inlinable
+    | Switch_branch -> Non_inlinable { escaping = false; }
+  in
+  match Continuation.sort (AC.continuation apply_cont) with
+  | Normal_or_exn ->
+    begin match Apply_cont.trap_action apply_cont with
+    | None -> default
+    | Some (Push _) -> Non_inlinable { escaping = false; }
+    | Some (Pop { raise_kind; _ }) ->
+      match raise_kind with
+      | None | Some Regular | Some Reraise ->
+        (* Until such time as we can manually add to the backtrace buffer,
+           we only convert "raise_notrace" into jumps, except if debugging
+           information generation is disabled.  (This matches the handling
+           at Cmm level; see [Cmm_helpers.raise_prim].)
+           We set [escaping = true] for the cases we do not want to
+           convert into jumps. *)
+        if !Clflags.debug then Non_inlinable { escaping = true; }
+        else Non_inlinable { escaping = false; }
+      | Some No_trace ->
+        Non_inlinable { escaping = false; }
+    end
+  | Return | Toplevel_return ->
+    Non_inlinable { escaping = false; }
+  | Define_root_symbol ->
+    assert (Option.is_none (Apply_cont.trap_action apply_cont));
+    default
+
+let clear_demoted_trap_action uacc apply_cont : AC.t =
+  match AC.trap_action apply_cont with
+  | None -> apply_cont
+  | Some (Push { exn_handler; } | Pop { exn_handler; _ }) ->
+    if UE.mem_continuation (UA.uenv uacc) exn_handler
+      && not (UA.is_demoted_exn_handler uacc exn_handler)
+    then apply_cont
+    else AC.clear_trap_action apply_cont

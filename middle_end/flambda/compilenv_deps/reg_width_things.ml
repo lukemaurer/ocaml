@@ -155,22 +155,25 @@ module Variable_data = struct
 
   let hash { compilation_unit; previous_compilation_units;
              name = _; name_stamp; user_visible = _; } =
-    (* The [name_stamp] uniquely determines [name] and [user_visible]. *)
-    Hashtbl.hash (List.map Compilation_unit.hash
-                    (compilation_unit :: previous_compilation_units),
-                  name_stamp)
+    let compilation_unit_hashes =
+      List.fold_left (fun hash compilation_unit ->
+          Misc.hash2 hash (Compilation_unit.hash compilation_unit))
+        (Compilation_unit.hash compilation_unit)
+        previous_compilation_units
+    in
+    Misc.hash2 compilation_unit_hashes (Hashtbl.hash name_stamp)
 
   let equal t1 t2 =
     if t1 == t2 then true
     else
       let { compilation_unit = compilation_unit1;
             previous_compilation_units = previous_compilation_units1;
-            name = _; name_stamp = name_stamp1; user_visible = _; 
+            name = _; name_stamp = name_stamp1; user_visible = _;
           } = t1
       in
       let { compilation_unit = compilation_unit2;
             previous_compilation_units = previous_compilation_units2;
-            name = _; name_stamp = name_stamp2; user_visible = _; 
+            name = _; name_stamp = name_stamp2; user_visible = _;
           } = t2
       in
       let rec previous_compilation_units_match l1 l2 =
@@ -221,28 +224,28 @@ end
 
 module Simple_data = struct
   type t = {
-    simple : Id.t;  (* always without [Rec_info] *)
-    rec_info : Rec_info.t;
+    simple : Id.t;  (* always without [Coercion] *)
+    coercion : Coercion.t;
   }
 
   let flags = simple_flags
 
-  let print ppf { simple = _; rec_info; } =
+  let print ppf { simple = _; coercion; } =
     Format.fprintf ppf "@[<hov 1>\
-        @[<hov 1>(rec_info@ %a)@]\
+        @[<hov 1>(coercion@ %a)@]\
         @]"
-      Rec_info.print rec_info
+      Coercion.print coercion
 
-  let hash { simple; rec_info; } =
-    Hashtbl.hash (Id.hash simple, Rec_info.hash rec_info)
+  let hash { simple; coercion; } =
+    Hashtbl.hash (Id.hash simple, Coercion.hash coercion)
 
   let equal t1 t2 =
     if t1 == t2 then true
     else
-      let { simple = simple1; rec_info = rec_info1; } = t1 in
-      let { simple = simple2; rec_info = rec_info2; } = t2 in
+      let { simple = simple1; coercion = coercion1; } = t1 in
+      let { simple = simple2; coercion = coercion2; } = t2 in
       Id.equal simple1 simple2
-        && Rec_info.equal rec_info1 rec_info2
+        && Coercion.equal coercion1 coercion2
 end
 
 module Const = struct
@@ -516,6 +519,9 @@ module Simple = struct
 
   let find_data t = Table.find !grand_table_of_simples t
 
+  let has_coercion t =
+    Id.flags t = simple_flags
+
   let name n = n
   let var v = v
   let vars vars = vars
@@ -524,33 +530,37 @@ module Simple = struct
 
   let [@inline always] pattern_match t ~name ~const =
     let flags = Id.flags t in
-    if flags = var_flags then name (Name.var t)
-    else if flags = symbol_flags then name (Name.symbol t)
-    else if flags = const_flags then const t
+    if flags = var_flags then
+      (name [@inlined hint]) (Name.var t) ~coercion:Coercion.id
+    else if flags = symbol_flags then
+      (name [@inlined hint]) (Name.symbol t) ~coercion:Coercion.id
+    else if flags = const_flags then (const [@inlined hint]) t
     else if flags = simple_flags then
-      let t = (find_data t).simple in
+      let { Simple_data.simple = t; coercion } = find_data t in
       let flags = Id.flags t in
-      if flags = var_flags then name (Name.var t)
-      else if flags = symbol_flags then name (Name.symbol t)
-      else if flags = const_flags then const t
+      if flags = var_flags then (name [@inlined hint]) (Name.var t) ~coercion
+      else if flags = symbol_flags then
+        (name [@inlined hint]) (Name.symbol t) ~coercion
+      else if flags = const_flags then (const [@inlined hint]) t
       else assert false
     else assert false
 
   let same t1 t2 =
-    let name n1 =
-      pattern_match t2 ~name:(fun n2 -> Name.equal n1 n2)
+    let name n1 ~coercion:co1 =
+      pattern_match t2
+        ~name:(fun n2 ~coercion:co2 -> Name.equal n1 n2 && Coercion.equal co1 co2)
         ~const:(fun _ -> false)
     in
     let const c1 =
-      pattern_match t2 ~name:(fun _ -> false)
+      pattern_match t2 ~name:(fun _ ~coercion:_ -> false)
         ~const:(fun c2 -> Const.equal c1 c2)
     in
     pattern_match t1 ~name ~const
 
-  let [@inline always] rec_info t =
+  let [@inline always] coercion t =
     let flags = Id.flags t in
-    if flags = simple_flags then Some ((find_data t).rec_info)
-    else None
+    if flags = simple_flags then (find_data t).coercion
+    else Coercion.id
 
   module T0 = struct
     let compare = Id.compare
@@ -560,18 +570,15 @@ module Simple = struct
     let print ppf t =
       let print ppf t =
         pattern_match t
-          ~name:(fun name -> Name.print ppf name)
+          ~name:(fun name ~coercion:_ -> Name.print ppf name)
           ~const:(fun cst -> Const.print ppf cst)
       in
-      match rec_info t with
-      | None -> print ppf t
-      | Some rec_info ->
-       Format.fprintf ppf "@[<hov 1>\
-            @[<hov 1>(simple@ %a)@] \
-            @[<hov 1>(rec_info@ %a)@]\
-            @]"
+      match coercion t with
+      | Id -> print ppf t
+      | Non_id _ as coercion ->
+        Format.fprintf ppf "@[<hov 1>(coerce@ %a@ %a)@]"
           print t
-          Rec_info.print rec_info
+          Coercion.print coercion
 
     let output chan t =
       print (Format.formatter_of_out_channel chan) t
@@ -583,16 +590,16 @@ module Simple = struct
     include T0
   end
 
-  let with_rec_info t new_rec_info =
-    if Rec_info.is_initial new_rec_info then t
+  let with_coercion t new_coercion =
+    if Coercion.is_id new_coercion then t
     else
-      match rec_info t with
-      | None ->
-        let data : Simple_data.t = { simple = t; rec_info = new_rec_info; } in
+      match coercion t with
+      | Id ->
+        let data : Simple_data.t = { simple = t; coercion = new_coercion; } in
         Table.add !grand_table_of_simples data
-      | Some _ ->
-        Misc.fatal_errorf "Cannot add [Rec_info] to [Simple] %a that already \
-            has [Rec_info]"
+      | Non_id _ ->
+        Misc.fatal_errorf "Cannot add [Coercion] to [Simple] %a that already \
+            has non-identity [Coercion]"
           print t
 
   module Set = Patricia_tree.Make_set (struct let print = print end)
@@ -601,11 +608,12 @@ module Simple = struct
 
   let export t = find_data t
 
-  let import map (data : exported) =
-    let simple = map data.simple in
-    let data : Simple_data.t =
-      { simple; rec_info = data.rec_info; }
-    in
+  let import (data : exported) =
+    (* Note: We do not import the underlying name or const.
+       This is done on purpose, to make the import process simpler
+       and well-defined, but means that the real import functions
+       (in Renaming) are responsible for importing the underlying
+       name/const. *)
     Table.add !grand_table_of_simples data
 
   let map_compilation_unit _f data =

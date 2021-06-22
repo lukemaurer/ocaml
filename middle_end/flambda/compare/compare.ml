@@ -251,7 +251,9 @@ let subst_name env n =
 let subst_simple env s =
   Simple.pattern_match s
     ~const:(fun _ -> s)
-    ~name:(fun n -> Simple.name (subst_name env n))
+    ~name:(fun n ~coercion:_ ->
+        (* CR lmaurer: Coercion dropped! *)
+        Simple.name (subst_name env n))
 ;;
 
 let subst_unary_primitive env (p : Flambda_primitive.unary_primitive)
@@ -307,6 +309,12 @@ let subst_set_of_closures env set =
   Set_of_closures.create decls ~closure_elements
 ;;
 
+let subst_rec_info_expr _env ri =
+  (* Only depth variables can occur in [Rec_info_expr], and we only mess with
+     symbols and other global names *)
+  ri
+;;
+
 let subst_field env (field : Static_const.Field_of_block.t) =
   match field with
   | Symbol symbol ->
@@ -351,6 +359,8 @@ and subst_named env (n : Named.t) =
     Named.create_set_of_closures (subst_set_of_closures env set)
   | Static_consts sc ->
     Named.create_static_consts (subst_static_consts env sc)
+  | Rec_info ri ->
+    Named.create_rec_info (subst_rec_info_expr env ri)
 and subst_static_consts env (g : Static_const.Group.t) =
   Static_const.Group.map g ~f:(subst_static_const env)
 and subst_bindable_let_bound env (blb : Bindable_let_bound.t) =
@@ -416,12 +426,14 @@ and subst_code env (code : Code.t) : Code.t =
     Option.map (subst_code_id env) (Code.newer_version_of code)
   in
   code
-  |> Code.with_params_and_body params_and_body
+  |> Code.with_params_and_body
+       ~cost_metrics:(Code.cost_metrics code)
+       params_and_body
   |> Code.with_newer_version_of newer_version_of
 and subst_params_and_body env params_and_body =
   Function_params_and_body.pattern_match params_and_body
     ~f:(fun ~return_continuation exn_continuation params ~body ~my_closure
-            ~is_my_closure_used:_ ->
+            ~is_my_closure_used:_ ~my_depth ->
       let body = subst_expr env body in
       let dbg = Function_params_and_body.debuginfo params_and_body in
       Function_params_and_body.create
@@ -432,6 +444,7 @@ and subst_params_and_body env params_and_body =
         ~body
         ~my_closure
         ~free_names_of_body:Unknown
+        ~my_depth
     )
 and subst_let_cont env (let_cont_expr : Let_cont_expr.t) =
   match let_cont_expr with
@@ -494,7 +507,7 @@ and subst_switch env switch =
   let arms =
     Target_imm.Map.map (subst_apply_cont env) (Switch_expr.arms switch)
   in
-  Expr.create_switch ~scrutinee ~arms
+  Expr.create_switch (Switch_expr.create ~scrutinee ~arms)
 ;;
 
 module Comparator = struct
@@ -665,9 +678,11 @@ let names env name1 name2 : Name.t Comparison.t =
 
 let simple_exprs env simple1 simple2 : Simple.t Comparison.t =
   Simple.pattern_match simple1
-    ~name:(fun name1 ->
+    ~name:(fun name1 ~coercion:_ ->
+      (* CR lmaurer: Coercion dropped! *)
       Simple.pattern_match simple2
-        ~name:(fun name2 ->
+        ~name:(fun name2 ~coercion:_ ->
+          (* CR lmaurer: Coercion dropped! *)
           names env name1 name2
           |> Comparison.map ~f:Simple.name
         )
@@ -677,7 +692,7 @@ let simple_exprs env simple1 simple2 : Simple.t Comparison.t =
     )
     ~const:(fun const1 ->
       Simple.pattern_match simple2
-        ~name:(fun _ -> Comparison.Different { approximant = simple1 })
+        ~name:(fun _ ~coercion:_ -> Comparison.Different { approximant = simple1 })
         ~const:(fun const2 : Simple.t Comparison.t ->
           if Reg_width_const.equal const1 const2
             then Equivalent
@@ -788,6 +803,35 @@ let function_decls env decl1 decl2 : unit Comparison.t =
   else Different { approximant = () }
 ;;
 
+(** Match up equal elements in two lists and iterate through both of them,
+    using [f] analogously to [Map.S.merge] *)
+let iter2_merged l1 l2 ~compare ~f =
+  let l1 = List.sort compare l1 in
+  let l2 = List.sort compare l2 in
+  let rec go l1 l2 =
+    match l1, l2 with
+    | [], [] -> ()
+    | a1 :: l1, [] ->
+      f (Some a1) None;
+      go l1 []
+    | [], a2 :: l2 ->
+      f None (Some a2);
+      go [] l2
+    | a1 :: l1, a2 :: l2 ->
+      begin match compare a1 a2 with
+      | 0 ->
+        f (Some a1) (Some a2);
+        go l1 l2
+      | c when c < 0 ->
+        f (Some a1) None;
+        go l1 (a2 :: l2)
+      | _ ->
+        f None (Some a2);
+        go (a1 :: l1) l2
+      end
+  in
+  go l1 l2
+
 let sets_of_closures env set1 set2 : Set_of_closures.t Comparison.t =
   (* Need to do unification on closure vars and closure ids, we we're going to
    * invert both maps, figuring the closure vars with the same value should be
@@ -799,28 +843,28 @@ let sets_of_closures env set1 set2 : Set_of_closures.t Comparison.t =
     |> List.map (fun (var, value) ->
          subst_simple env value, var
        )
-    |> Simple.Map.of_list
   in
   (* We want to process the whole map to find new correspondences between
    * closure vars, so we need to remember whether we've found any mismatches *)
   let ok = ref true in
-  (* Using merge here as a map version of [List.iter2]; always returning None
-   * means the returned map is always empty, so this shouldn't waste much *)
-  let _ : unit Simple.Map.t =
-    Simple.Map.merge (fun _value var1 var2 ->
-      begin
-        match var1, var2 with
-        | None, None -> ()
-        | Some _, None | None, Some _ -> ok := false
-        | Some var1, Some var2 ->
-          begin
-            match closure_vars env var1 var2 with
-            | Equivalent -> ()
-            | Different { approximant = _ } -> ok := false
-          end
-      end;
-      None
-    ) (closure_vars_by_value set1) (closure_vars_by_value set2)
+  let () =
+    let compare (value1, _var1) (value2, _var2) =
+      Simple.compare value1 value2
+    in
+    iter2_merged (closure_vars_by_value set1) (closure_vars_by_value set2)
+      ~compare
+      ~f:(fun elt1 elt2 ->
+        begin
+          match elt1, elt2 with
+          | None, None -> ()
+          | Some _, None | None, Some _ -> ok := false
+          | Some (_value1, var1), Some (_value2, var2) ->
+            begin
+              match closure_vars env var1 var2 with
+              | Equivalent -> ()
+              | Different { approximant = _ } -> ok := false
+            end
+        end)
   in
   let closure_ids_and_fun_decls_by_code_id set =
     let map = Function_declarations.funs (Set_of_closures.function_decls set) in
@@ -831,6 +875,8 @@ let sets_of_closures env set1 set2 : Set_of_closures.t Comparison.t =
        )
     |> Code_id.Map.of_list
   in
+  (* Using merge here as a map version of [List.iter2]; always returning None
+   * means the returned map is always empty, so this shouldn't waste much *)
   let _ : unit Code_id.Map.t =
     Code_id.Map.merge (fun _code_id value1 value2 ->
       begin
@@ -858,6 +904,15 @@ let sets_of_closures env set1 set2 : Set_of_closures.t Comparison.t =
       else Different { approximant = subst_set_of_closures env set1 }
 ;;
 
+let rec_info_exprs _env rec_info_expr1 rec_info_expr2
+      : Rec_info_expr.t Comparison.t =
+  (* Rec_info expressions only ever have occurrences of local variables, so
+     we don't need to do any of this alpha-equivalence stuff *)
+  if Rec_info_expr.equal rec_info_expr1 rec_info_expr2
+    then Equivalent
+    else Different { approximant = rec_info_expr1 }
+;;
+
 let named_exprs env named1 named2 : Named.t Comparison.t =
   match (named1 : Named.t), (named2 : Named.t) with
   | Simple simple1, Simple simple2 ->
@@ -869,7 +924,15 @@ let named_exprs env named1 named2 : Named.t Comparison.t =
   | Set_of_closures set1, Set_of_closures set2 ->
     sets_of_closures env set1 set2
     |> Comparison.map ~f:Named.create_set_of_closures
-  | _, _ ->
+  | Rec_info rec_info_expr1, Rec_info rec_info_expr2 ->
+    rec_info_exprs env rec_info_expr1 rec_info_expr2
+    |> Comparison.map ~f:Named.create_rec_info
+  | Static_consts _static_consts1, Static_consts _static_consts2 ->
+    (* CR lmaurer: Oops. Use of a wildcard pattern left this case
+       unimplemented back when [Static_consts] was added. Remember, kids, don't
+       use catch-all cases. *)
+    assert false
+  | (Simple _ | Prim _ | Set_of_closures _ | Static_consts _ | Rec_info _), _ ->
     Different { approximant = subst_named env named1 }
 ;;
 
@@ -1087,7 +1150,7 @@ let switch_exprs env switch1 switch2 : Expr.t Comparison.t =
     (Switch.arms switch1, Switch.scrutinee switch1)
     (Switch.arms switch2, Switch.scrutinee switch2)
   |> Comparison.map ~f:(fun (arms, scrutinee) ->
-      Expr.create_switch ~scrutinee ~arms
+      Expr.create_switch (Switch.create ~scrutinee ~arms)
   )
 ;;
 
@@ -1212,13 +1275,13 @@ and codes env (code1 : Code.t) (code2 : Code.t) =
     Function_params_and_body.pattern_match_pair
       params_and_body1 params_and_body2
       ~f:(fun ~return_continuation exn_continuation params ~body1 ~body2
-              ~my_closure ->
+              ~my_closure ~my_depth ->
         exprs env body1 body2
         |> Comparison.map ~f:(fun body1' ->
              let dbg = Function_params_and_body.debuginfo params_and_body1 in
              Function_params_and_body.create
                ~return_continuation exn_continuation params ~dbg ~body:body1'
-               ~my_closure ~free_names_of_body:Unknown
+               ~my_closure ~my_depth ~free_names_of_body:Unknown
            )
       )
   in
@@ -1248,7 +1311,8 @@ and codes env (code1 : Code.t) (code2 : Code.t) =
       in
       code1
       |> Code.with_code_id (Code.code_id code2)
-      |> Code.with_params_and_body params_and_body
+      |> Code.with_params_and_body
+           ~cost_metrics:(Code.cost_metrics code2) params_and_body
       |> Code.with_newer_version_of newer_version_of)
   |> Comparison.add_condition
       ~approximant:(fun () -> subst_code env code1)
@@ -1348,22 +1412,22 @@ and cont_handlers env handler1 handler2 =
 
 let flambda_units u1 u2 =
   let ret_cont = Continuation.create ~sort:Toplevel_return () in
-  let exn_cont = Continuation.create ~sort:Exn () in
+  let exn_cont = Continuation.create () in
   let mk_perm u =
-    let perm = Name_permutation.empty in
+    let perm = Renaming.empty in
     let perm =
-      Name_permutation.add_fresh_continuation perm
+      Renaming.add_fresh_continuation perm
         (Flambda_unit.return_continuation u) ~guaranteed_fresh:ret_cont
     in
     let perm =
-      Name_permutation.add_fresh_continuation perm
+      Renaming.add_fresh_continuation perm
         (Flambda_unit.exn_continuation u) ~guaranteed_fresh:exn_cont
     in
     perm
   in
   let env = Env.create () in
-  let body1 = Expr.apply_name_permutation (Flambda_unit.body u1) (mk_perm u1) in
-  let body2 = Expr.apply_name_permutation (Flambda_unit.body u2) (mk_perm u2) in
+  let body1 = Expr.apply_renaming (Flambda_unit.body u1) (mk_perm u1) in
+  let body2 = Expr.apply_renaming (Flambda_unit.body u2) (mk_perm u2) in
   exprs env body1 body2
   |> Comparison.map ~f:(fun body ->
        let module_symbol = Flambda_unit.module_symbol u1 in

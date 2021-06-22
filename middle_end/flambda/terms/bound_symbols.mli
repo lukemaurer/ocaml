@@ -47,6 +47,8 @@ val code_being_defined : t -> Code_id.Set.t
 
 val binds_code : t -> bool
 
+val binds_symbols : t -> bool
+
 val non_closure_symbols_being_defined : t -> Symbol.Set.t
 
 val closure_symbols_being_defined : t -> Symbol.Set.t
@@ -59,6 +61,8 @@ val for_all_everything_being_defined
   -> bool
 
 val concat : t -> t -> t
+
+val gc_roots : t -> Symbol.t list
 
 include Expr_std.S with type t := t
 include Contains_ids.S with type t := t

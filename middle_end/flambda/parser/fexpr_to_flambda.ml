@@ -28,6 +28,13 @@ module D = struct
 end
 module DM = Map.Make(D)
 
+(* Depth variables *)
+module DV = struct
+  type t = string
+  let compare = String.compare
+end
+module DVM = Map.Make(DV)
+
 (* Closure ids (globally scoped, so updates are in-place) *)
 module U = struct
   type t = string
@@ -52,6 +59,7 @@ type env = {
   variables : Variable.t VM.t;
   symbols : Symbol.t SM.t;
   code_ids : Code_id.t DM.t;
+  depth_variables : Depth_variable.t DVM.t;
   closure_ids : Closure_id.t UT.t;
   vars_within_closures : Var_within_closure.t WT.t;
 }
@@ -60,7 +68,7 @@ let init_env () =
   let done_continuation =
     Continuation.create ~sort:Toplevel_return ~name:"done" ()
   in
-  let exn_handler = Continuation.create ~sort:Exn ~name:"error" () in
+  let exn_handler = Continuation.create ~name:"error" () in
   let error_continuation =
     Exn_continuation.create ~exn_handler ~extra_args:[]
   in {
@@ -71,6 +79,7 @@ let init_env () =
     variables = VM.empty;
     symbols = SM.empty;
     code_ids = DM.empty;
+    depth_variables = DVM.empty;
     closure_ids = UT.create 10;
     vars_within_closures = WT.create 10;
   }
@@ -78,6 +87,7 @@ let init_env () =
 let enter_code env = {
   continuations = CM.empty;
   exn_continuations = CM.empty;
+  depth_variables = DVM.empty;
   variables = env.variables;
   done_continuation = env.done_continuation;
   error_continuation = env.error_continuation;
@@ -94,7 +104,7 @@ let fresh_cont env { Fexpr.txt = name; loc = _ } ~sort ~arity =
     continuations = CM.add name (c, arity) env.continuations }
 
 let fresh_exn_cont env { Fexpr.txt = name; loc = _ } =
-  let c = Continuation.create ~sort:Exn ~name () in
+  let c = Continuation.create ~name () in
   let e = Exn_continuation.create ~exn_handler:c ~extra_args:[] in
   e,
   { env with
@@ -112,6 +122,12 @@ let fresh_code_id env { Fexpr.txt = name; loc = _ } =
   c,
   { env with
     code_ids = DM.add name c env.code_ids }
+
+let fresh_depth_var env { Fexpr.txt = name; loc = _ } =
+  let dv = Depth_variable.create name in
+  dv,
+  { env with
+    depth_variables = DVM.add name dv env.depth_variables }
 
 let fresh_closure_id env { Fexpr.txt = name; loc = _ } =
   let v = Variable.create name in
@@ -251,6 +267,7 @@ let value_kind
       | Naked_nativeint -> Flambda_kind.naked_nativeint
     end
   | Fabricated -> Misc.fatal_error "Fabricated should not be used"
+  | Rec_info -> Flambda_kind.With_subkind.rec_info
 
 let value_kind_with_subkind_opt : Fexpr.kind_with_subkind option -> Flambda_kind.With_subkind.t = function
   | Some kind -> value_kind_with_subkind kind
@@ -605,8 +622,9 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
       |> Target_imm.Map.of_list
     in
     Flambda.Expr.create_switch
-      ~scrutinee:(simple env scrutinee)
-      ~arms
+      (Flambda.Switch.create
+        ~scrutinee:(simple env scrutinee)
+        ~arms)
 
   | Let_symbol { bindings; closure_elements; scoping_rule; body } ->
     (* Desugar the abbreviated form for a single set of closures *)
@@ -714,7 +732,7 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
         Set_of_closures set
       | Closure _ -> assert false (* should have been filtered out above *)
       | Code { id; newer_version_of; param_arity; ret_arity; recursive; inline;
-               params_and_body } ->
+               params_and_body; code_size } ->
         let code_id = find_code_id env id in
         let newer_version_of =
           Option.map (find_code_id env) newer_version_of
@@ -755,6 +773,8 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
                 env params
             in
             let my_closure, env = fresh_var env closure_var in
+            (* CR lmaurer: Add depth variables to fexpr *)
+            let my_depth, env = fresh_depth_var env { txt = "depth"; loc = Loc_unknown } in
             let return_continuation, env =
               fresh_cont env ret_cont ~sort:Return
                 ~arity:(List.length result_arity)
@@ -767,7 +787,7 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
             let params_and_body =
               Flambda.Function_params_and_body.create
                 ~return_continuation
-                exn_continuation params ~body ~my_closure ~dbg
+                exn_continuation params ~body ~my_closure ~my_depth ~dbg
                 ~free_names_of_body:Unknown
             in
             (* CR lmaurer: Add
@@ -789,6 +809,9 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
         let inline =
           inline |> Option.value ~default:Inline_attribute.Default_inline
         in
+        let cost_metrics =
+          Flambda.Cost_metrics.from_size (Code_size.of_int code_size)
+        in
         let code =
           Flambda.Code.create
             code_id
@@ -800,6 +823,9 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
             ~inline
             ~is_a_functor:false
             ~recursive
+            ~cost_metrics
+            (* CR poechsel: grab inlining arguments from fexpr. *)
+            ~inlining_arguments:Inlining_arguments.unknown
         in
         Code code
     in

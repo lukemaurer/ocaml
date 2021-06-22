@@ -170,6 +170,7 @@ module type Optcommon_options = sig
   val _inline : string -> unit
   val _inline_toplevel : string -> unit
   val _inlining_report : unit -> unit
+  val _inlining_report_bin : unit -> unit
   val _dump_pass : string -> unit
   val _inline_max_depth : string -> unit
   val _rounds : int -> unit
@@ -178,8 +179,11 @@ module type Optcommon_options = sig
   val _inline_alloc_cost : string -> unit
   val _inline_prim_cost : string -> unit
   val _inline_branch_cost : string -> unit
-  val _inline_indirect_cost : string -> unit
+  val _inline_indirect_call_cost : string -> unit
+  val _inline_poly_compare_cost : string -> unit
   val _inline_lifting_benefit : string -> unit
+  val _inline_small_function_size : string -> unit
+  val _inline_large_function_size : string -> unit
   val _unbox_closures : unit -> unit
   val _unbox_closures_factor : int -> unit
   val _inline_branch_factor : string -> unit
@@ -241,15 +245,12 @@ module type Optcommon_options = sig
   val _no_flambda_expert_inline_effects_in_cmm : unit -> unit
   val _flambda_expert_phantom_lets : unit -> unit
   val _no_flambda_expert_phantom_lets : unit -> unit
-  val _flambda_expert_max_inlining_depth : int -> unit
   val _flambda_expert_max_block_size_for_projections : int -> unit
+  val _flambda_expert_max_unboxing_depth : int -> unit
   val _flambda_debug_permute_every_name : unit -> unit
   val _no_flambda_debug_permute_every_name : unit -> unit
   val _flambda_debug_concrete_types_only_on_canonicals : unit -> unit
   val _no_flambda_debug_concrete_types_only_on_canonicals : unit -> unit
-
-  val _dprepared_lambda : unit -> unit
-  val _dilambda : unit -> unit
 end;;
 
 module type Optcomp_options = sig
@@ -264,6 +265,7 @@ module type Optcomp_options = sig
   val _afl_instrument : unit -> unit
   val _afl_inst_ratio : int -> unit
   val _function_sections : unit -> unit
+  val _save_ir_after : string -> unit
 end;;
 
 module type Opttop_options = sig

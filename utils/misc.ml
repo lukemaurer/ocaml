@@ -228,6 +228,11 @@ let try_finally ?(always=(fun () -> ())) ?(exceptionally=(fun () -> ())) work =
           Printexc.raise_with_backtrace always_exn always_bt
       end
 
+let reraise_preserving_backtrace e f =
+  let bt = Printexc.get_raw_backtrace () in
+  f ();
+  Printexc.raise_with_backtrace e bt
+
 type ref_and_value = R : 'a ref * 'a -> ref_and_value
 
 let protect_refs =
@@ -293,14 +298,6 @@ module Stdlib = struct
       | ([], []) -> true
       | (hd1 :: tl1, hd2 :: tl2) -> eq hd1 hd2 && equal eq tl1 tl2
       | (_, _) -> false
-
-    let rec find_map f = function
-      | x :: xs ->
-          begin match f x with
-          | None -> find_map f xs
-          | Some _ as y -> y
-          end
-      | [] -> None
 
     let map2_prefix f l1 l2 =
       let rec aux acc l1 l2 =
@@ -530,6 +527,18 @@ let create_hashtable size init =
   let tbl = Hashtbl.create size in
   List.iter (fun (key, data) -> Hashtbl.add tbl key data) init;
   tbl
+
+let hash_seed =
+  let seed = Random.bits () in
+  if seed mod 2 = 0 then seed + 1 else seed
+
+(* Fast integer hashing algorithm for sdolan.  With the stdlib Hashtbl
+   implementation it's ok that this returns > 30 bits. *)
+let hash2 a b =
+  let a = Hashtbl.hash a in
+  let b = Hashtbl.hash b in
+  let r = a * hash_seed + b in
+  r lxor (r lsr 17)
 
 (* File copy *)
 

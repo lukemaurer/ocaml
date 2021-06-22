@@ -25,6 +25,12 @@ type t
 
 include Contains_ids.S with type t := t
 
+val apply_renaming
+   : Code_id.t Code_id.Map.t
+  -> Renaming.t
+  -> t
+  -> t
+
 val print : Format.formatter -> t -> unit
 
 val empty : t
@@ -44,3 +50,5 @@ val find_code_if_not_imported : t -> Code_id.t -> Flambda.Code.t option
 val find_calling_convention : t -> Code_id.t -> Calling_convention.t
 
 val remove_unreachable : t -> reachable_names:Name_occurrences.t -> t
+
+val iter : t -> (Code_id.t -> Flambda.Code.t -> unit) -> unit

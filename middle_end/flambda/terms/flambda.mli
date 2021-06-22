@@ -73,41 +73,10 @@ module rec Expr : sig
   (** Create a continuation application (in the zero-arity case, "goto"). *)
   val create_apply_cont : Apply_cont.t -> t
 
-  (** What happened when a [Switch]-expression was created. *)
-  type switch_creation_result = private
-    | Have_deleted_comparison_but_not_branch
-    | Have_deleted_comparison_and_branch
-    | Nothing_deleted
-
-  (** Create a [Switch] expression, save that zero-arm switches are converted
-      to [Invalid], and one-arm switches to [Apply_cont]. *)
-  val create_switch0
-     : scrutinee:Simple.t
-    -> arms:Apply_cont_expr.t Target_imm.Map.t
-    -> Expr.t * switch_creation_result
-
-  (** Like [create_switch0], but for use when the caller isn't interested in
-      whether something got deleted. *)
-  val create_switch
-     : scrutinee:Simple.t
-    -> arms:Apply_cont_expr.t Target_imm.Map.t
-    -> Expr.t
-
-  (** Build a [Switch] corresponding to a traditional if-then-else. *)
-  val create_if_then_else
-     : scrutinee:Simple.t
-    -> if_true:Apply_cont_expr.t
-    -> if_false:Apply_cont_expr.t
-    -> t
+  val create_switch : Switch_expr.t -> t
 
   (** Create an expression indicating type-incorrect or unreachable code. *)
   val create_invalid : ?semantics:Invalid_term_semantics.t -> unit -> t
-
-  val bind_no_simplification
-     : bindings:(Var_in_binding_pos.t * Named.t) list
-    -> body:Expr.t
-    -> free_names_of_body:Name_occurrences.t
-    -> Expr.t * Name_occurrences.t
 
   val bind_parameters_to_args_no_simplification
      : params:Kinded_parameter.t list
@@ -129,6 +98,8 @@ end and Named : sig
     | Static_consts of Static_const.Group.t
       (** Definition of one or more symbols representing statically-allocated
           constants (including sets of closures). *)
+    | Rec_info of Rec_info_expr.t
+      (** Definition of a state of recursive inlining. *)
 
   (** Printing, invariant checks, name manipulation, etc. *)
   include Expr_std.S with type t := t
@@ -146,6 +117,10 @@ end and Named : sig
   (** Convert one or more statically-allocated constants into the defining
       expression of a [Let]. *)
   val create_static_consts : Static_const.Group.t -> t
+
+  (** Convert one or more expressions for recursion state into the defining
+      expression of a [Let]. *)
+  val create_rec_info : Rec_info_expr.t -> t
 
   (** Build an expression boxing the name.  The returned kind is the
       one of the unboxed version. *)
@@ -387,20 +362,6 @@ end and Continuation_handler : sig
       simultaneously-defined continuations when one or more of them is an
       exception handler.) *)
   val is_exn_handler : t -> bool
-
-  module Behaviour : sig
-    type t = private
-      | Unreachable of { arity : Flambda_arity.With_subkinds.t; }
-      | Alias_for of {
-          arity : Flambda_arity.With_subkinds.t;
-          alias_for : Continuation.t;
-        }
-      | Unknown of { arity : Flambda_arity.With_subkinds.t; }
-  end
-
-  val arity : t -> Flambda_arity.With_subkinds.t
-
-  val behaviour : t -> Behaviour.t
 end and Recursive_let_cont_handlers : sig
   (** The representation of the alpha-equivalence class of a group of possibly
       (mutually-) recursive continuation handlers that are bound both over a
@@ -471,6 +432,7 @@ end and Function_params_and_body : sig
     -> body:Expr.t
     -> free_names_of_body:Name_occurrences.t Or_unknown.t
     -> my_closure:Variable.t
+    -> my_depth:Depth_variable.t
     -> t
 
   (** Choose a member of the alpha-equivalence class to enable examination
@@ -490,6 +452,7 @@ end and Function_params_and_body : sig
       -> body:Expr.t
       -> my_closure:Variable.t
       -> is_my_closure_used:bool Or_unknown.t
+      -> my_depth:Depth_variable.t
       -> 'a)
     -> 'a
 
@@ -511,6 +474,7 @@ end and Function_params_and_body : sig
       -> body1:Expr.t
       -> body2:Expr.t
       -> my_closure:Variable.t
+      -> my_depth:Depth_variable.t
       -> 'a)
     -> 'a
 
@@ -537,6 +501,8 @@ end and Static_const : sig
 
     (** Printing, total ordering, etc. *)
     include Identifiable.S with type t := t
+
+    include Contains_names.S with type t := t
   end
 
   (* CR mshinwell: Somewhere there should be an invariant check that
@@ -655,6 +621,10 @@ end and Code : sig
 
   val recursive : t -> Recursive.t
 
+  val cost_metrics : t -> Cost_metrics.t
+
+  val inlining_arguments : t -> Inlining_arguments.t
+
   val create
      : Code_id.t
     -> params_and_body:
@@ -666,12 +636,15 @@ end and Code : sig
     -> inline:Inline_attribute.t
     -> is_a_functor:bool
     -> recursive:Recursive.t
+    -> cost_metrics:Cost_metrics.t
+    -> inlining_arguments:Inlining_arguments.t
     -> t
 
   val with_code_id : Code_id.t -> t -> t
 
   val with_params_and_body
      : (Function_params_and_body.t * Name_occurrences.t) Or_deleted.t
+    -> cost_metrics:Cost_metrics.t
     -> t
     -> t
 
@@ -679,15 +652,44 @@ end and Code : sig
 
   val print : Format.formatter -> t -> unit
 
-  val free_names : t -> Name_occurrences.t
+  include Contains_names.S with type t := t
 
   val all_ids_for_export : t -> Ids_for_export.t
-
-  val import : Ids_for_export.Import_map.t -> t -> t
 
   val make_deleted : t -> t
 
   val is_deleted : t -> bool
+end and Cost_metrics : sig
+  type t
+
+  val zero : t
+  val from_size : Code_size.t -> t
+  val size : t -> Code_size.t
+  val print : Format.formatter -> t -> unit
+  val (+) : t -> t -> t
+
+  type code_characteristics = {
+    cost_metrics : t;
+    params_arity : int;
+  }
+  val set_of_closures
+    : find_code_characteristics:(Code_id.t -> code_characteristics)
+    -> Set_of_closures.t
+    -> t
+
+  val increase_due_to_let_expr
+     : is_phantom:bool
+    -> cost_metrics_of_defining_expr:t
+    -> t
+
+  val increase_due_to_let_cont_non_recursive : cost_metrics_of_handler:t -> t
+  val increase_due_to_let_cont_recursive : cost_metrics_of_handlers:t -> t
+
+  val notify_added: code_size:Code_size.t -> t -> t
+  val notify_removed : operation:Removed_operations.t -> t -> t
+
+  val expr_size : find_code:(Code_id.t -> Code.t) -> Expr.t -> Code_size.t
+  val evaluate : args:Inlining_arguments.t -> t -> float
 end
 
 module Function_declaration = Function_declaration
@@ -716,4 +718,5 @@ module Import : sig
   module Set_of_closures = Set_of_closures
   module Static_const = Static_const
   module Switch = Switch
+  module Cost_metrics = Cost_metrics
 end

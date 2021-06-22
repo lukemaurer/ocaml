@@ -72,56 +72,56 @@ let print_with_cache ~cache ppf t =
 
 let print ppf t = print_with_cache ~cache:(Printing_cache.create ()) ppf t
 
-let apply_name_permutation_variant blocks immediates perm =
+let apply_renaming_variant blocks immediates perm =
   let immediates' =
     Or_unknown.map immediates ~f:(fun immediates ->
-      T.apply_name_permutation immediates perm)
+      T.apply_renaming immediates perm)
   in
   let blocks' =
     Or_unknown.map blocks ~f:(fun blocks ->
-      Blocks.apply_name_permutation blocks perm)
+      Blocks.apply_renaming blocks perm)
   in
   if immediates == immediates' && blocks == blocks' then
     None
   else
     Some (blocks', immediates')
 
-let apply_name_permutation t perm =
+let apply_renaming t perm =
   match t with
   | Variant { blocks; immediates; is_unique; } ->
     begin match
-      apply_name_permutation_variant blocks immediates perm
+      apply_renaming_variant blocks immediates perm
     with
     | None -> t
     | Some (blocks, immediates) ->
       Variant (Variant.create ~is_unique ~blocks ~immediates)
     end
   | Boxed_float ty ->
-    let ty' = T.apply_name_permutation ty perm in
+    let ty' = T.apply_renaming ty perm in
     if ty == ty' then t
     else Boxed_float ty'
   | Boxed_int32 ty ->
-    let ty' = T.apply_name_permutation ty perm in
+    let ty' = T.apply_renaming ty perm in
     if ty == ty' then t
     else Boxed_int32 ty'
   | Boxed_int64 ty ->
-    let ty' = T.apply_name_permutation ty perm in
+    let ty' = T.apply_renaming ty perm in
     if ty == ty' then t
     else Boxed_int64 ty'
   | Boxed_nativeint ty ->
-    let ty' = T.apply_name_permutation ty perm in
+    let ty' = T.apply_renaming ty perm in
     if ty == ty' then t
     else Boxed_nativeint ty'
   | Closures { by_closure_id; } ->
     let by_closure_id' =
-      Row_like.For_closures_entry_by_set_of_closures_contents.apply_name_permutation
+      Row_like.For_closures_entry_by_set_of_closures_contents.apply_renaming
         by_closure_id perm
     in
     if by_closure_id == by_closure_id' then t
     else Closures { by_closure_id = by_closure_id'; }
   | String _ -> t
   | Array { length; } ->
-    let length' = T.apply_name_permutation length perm in
+    let length' = T.apply_renaming length perm in
     if length == length' then t
     else Array { length = length'; }
 
@@ -156,26 +156,7 @@ let all_ids_for_export t =
   | String _ -> Ids_for_export.empty
   | Array { length; } -> T.all_ids_for_export length
 
-let import import_map t =
-  match t with
-  | Variant { blocks; immediates; is_unique; } ->
-    let blocks = Or_unknown.import Blocks.import import_map blocks in
-    let immediates = Or_unknown.import T.import import_map immediates in
-    Variant (Variant.create ~is_unique ~blocks ~immediates)
-  | Boxed_float ty -> Boxed_float (T.import import_map ty)
-  | Boxed_int32 ty -> Boxed_int32 (T.import import_map ty)
-  | Boxed_int64 ty -> Boxed_int64 (T.import import_map ty)
-  | Boxed_nativeint ty -> Boxed_nativeint (T.import import_map ty)
-  | Closures { by_closure_id; } ->
-    let by_closure_id =
-      Row_like.For_closures_entry_by_set_of_closures_contents.import import_map
-        by_closure_id
-    in
-    Closures { by_closure_id; }
-  | (String _) as t -> t
-  | Array { length; } -> Array { length = T.import import_map length; }
-
-let apply_rec_info t rec_info : _ Or_bottom.t =
+let apply_coercion t coercion : _ Or_bottom.t =
   match t with
   | Closures { by_closure_id; } ->
     Or_bottom.map
@@ -183,7 +164,7 @@ let apply_rec_info t rec_info : _ Or_bottom.t =
        map_function_decl_types
         by_closure_id
         ~f:(fun (decl : Function_declaration_type.t) : _ Or_bottom.t ->
-          Function_declaration_type.apply_rec_info decl rec_info))
+          Function_declaration_type.apply_coercion decl coercion))
       ~f:(fun by_closure_id -> Closures { by_closure_id; })
   | Variant _
   | Boxed_float _
@@ -192,7 +173,7 @@ let apply_rec_info t rec_info : _ Or_bottom.t =
   | Boxed_nativeint _
   | String _
   | Array _ ->
-    if Rec_info.is_initial rec_info then Ok t
+    if Coercion.is_id coercion then Ok t
     else Bottom
 
 let eviscerate t : _ Or_unknown.t =
@@ -279,7 +260,11 @@ let meet_variant env
     | Known imms -> assert (not (T.is_obviously_bottom imms));
     end;
     let env_extension =
-      TEE.join env env_extension1 env_extension2
+      let env = Meet_env.env env in
+      let join_env =
+        Join_env.create env ~left_env:env ~right_env:env
+      in
+      TEE.join join_env env_extension1 env_extension2
     in
     Ok (blocks, immediates, env_extension)
 

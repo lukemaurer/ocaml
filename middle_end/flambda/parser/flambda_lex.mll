@@ -75,6 +75,7 @@ let keyword_table =
     "pop", KWD_POP;
     "push", KWD_PUSH;
     "rec", KWD_REC;
+    "rec_info", KWD_REC_INFO;
     "regular", KWD_REGULAR;
     "reraise", KWD_RERAISE;
     "set_of_closures", KWD_SET_OF_CLOSURES;

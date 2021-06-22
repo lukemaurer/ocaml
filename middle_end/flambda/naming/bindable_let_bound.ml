@@ -26,6 +26,9 @@ type t =
       closure_vars : Var_in_binding_pos.t list;
     }
   | Symbols of symbols
+  (* CR mshinwell: Add a case here for let-code and move it out of
+     Symbols *)
+  | Depth of Bindable_depth_variable.t
 
 include Identifiable.Make (struct
   type nonrec t = t
@@ -45,6 +48,7 @@ include Identifiable.Make (struct
           )@]"
         Bound_symbols.print bound_symbols
         Symbol_scoping_rule.print scoping_rule
+    | Depth depth_variable -> Depth_variable.print ppf depth_variable
 
   (* The following would only be required if using
      [Name_abstraction.Make_map], which we don't with this module. *)
@@ -78,27 +82,33 @@ let free_names t =
       closure_vars
   | Symbols { bound_symbols; scoping_rule = _; } ->
     Bound_symbols.free_names bound_symbols
+  | Depth depth_variable ->
+    Name_occurrences.singleton_depth_variable depth_variable
 
-let apply_name_permutation t perm =
+let apply_renaming t perm =
   match t with
   | Singleton var ->
-    let var' = Var_in_binding_pos.apply_name_permutation var perm in
+    let var' = Var_in_binding_pos.apply_renaming var perm in
     if var == var' then t
     else Singleton var'
   | Set_of_closures { name_mode; closure_vars; } ->
     let closure_vars' =
       Misc.Stdlib.List.map_sharing (fun var ->
-          Var_in_binding_pos.apply_name_permutation var perm)
+          Var_in_binding_pos.apply_renaming var perm)
         closure_vars
     in
     if closure_vars == closure_vars' then t
     else Set_of_closures { name_mode; closure_vars = closure_vars'; }
   | Symbols { bound_symbols; scoping_rule; } ->
     let bound_symbols' =
-      Bound_symbols.apply_name_permutation bound_symbols perm
+      Bound_symbols.apply_renaming bound_symbols perm
     in
     if bound_symbols == bound_symbols' then t
     else Symbols { scoping_rule; bound_symbols = bound_symbols'; }
+  | Depth dv ->
+    let dv' = Bindable_depth_variable.apply_renaming dv perm in
+    if dv == dv' then t
+    else Depth dv'
 
 let all_ids_for_export t =
   match t with
@@ -112,28 +122,8 @@ let all_ids_for_export t =
       closure_vars
   | Symbols { bound_symbols; scoping_rule = _; } ->
     Bound_symbols.all_ids_for_export bound_symbols
-
-let import import_map t =
-  match t with
-  | Singleton var ->
-    let raw_var =
-      Ids_for_export.Import_map.variable import_map (Var_in_binding_pos.var var)
-    in
-    Singleton
-      (Var_in_binding_pos.create raw_var (Var_in_binding_pos.name_mode var))
-  | Set_of_closures { name_mode; closure_vars; } ->
-    let closure_vars =
-      List.map (fun var ->
-          Var_in_binding_pos.create
-            (Ids_for_export.Import_map.variable import_map
-               (Var_in_binding_pos.var var))
-            (Var_in_binding_pos.name_mode var))
-        closure_vars
-    in
-    Set_of_closures { name_mode; closure_vars; }
-  | Symbols { bound_symbols; scoping_rule; } ->
-    let bound_symbols = Bound_symbols.import import_map bound_symbols in
-    Symbols { bound_symbols; scoping_rule; }
+  | Depth depth_variable ->
+    Bindable_depth_variable.all_ids_for_export depth_variable
 
 let rename t =
   match t with
@@ -144,11 +134,12 @@ let rename t =
     in
     Set_of_closures { name_mode; closure_vars; }
   | Symbols _ -> t
+  | Depth d -> Depth (Bindable_depth_variable.rename d)
 
 let add_to_name_permutation t1 ~guaranteed_fresh:t2 perm =
   match t1, t2 with
   | Singleton var1, Singleton var2 ->
-    Name_permutation.add_fresh_variable perm
+    Renaming.add_fresh_variable perm
       (Var_in_binding_pos.var var1)
       ~guaranteed_fresh:(Var_in_binding_pos.var var2)
   | Set_of_closures { name_mode = _; closure_vars = closure_vars1; },
@@ -158,7 +149,7 @@ let add_to_name_permutation t1 ~guaranteed_fresh:t2 perm =
     then
       List.fold_left2
         (fun perm var1 var2 ->
-          Name_permutation.add_fresh_variable perm
+          Renaming.add_fresh_variable perm
             (Var_in_binding_pos.var var1)
             ~guaranteed_fresh:(Var_in_binding_pos.var var2))
         perm
@@ -169,13 +160,15 @@ let add_to_name_permutation t1 ~guaranteed_fresh:t2 perm =
         print t1
         print t2
   | Symbols _, Symbols _ -> perm
-  | (Singleton _ | Set_of_closures _ | Symbols _), _ ->
+  | Depth dv1, Depth dv2 ->
+    Renaming.add_fresh_depth_variable perm dv1 ~guaranteed_fresh:dv2
+  | (Singleton _ | Set_of_closures _ | Symbols _ | Depth _), _ ->
     Misc.fatal_errorf "Kind mismatch:@ %a@ and@ %a"
       print t1
       print t2
 
 let name_permutation t ~guaranteed_fresh =
-  add_to_name_permutation t ~guaranteed_fresh Name_permutation.empty
+  add_to_name_permutation t ~guaranteed_fresh Renaming.empty
 
 let singleton_occurrence_in_terms t = free_names t
 
@@ -209,50 +202,86 @@ let set_of_closures ~closure_vars =
 let symbols bound_symbols scoping_rule =
   Symbols { bound_symbols; scoping_rule; }
 
+let depth depth_variable =
+  Depth depth_variable
+
 let name_mode t =
   match t with
   | Singleton var -> Var_in_binding_pos.name_mode var
   | Set_of_closures { name_mode; _ } -> name_mode
   | Symbols _ -> Name_mode.normal
+  | Depth _ -> Name_mode.normal
+
+let with_name_mode t name_mode =
+  match t with
+  | Singleton var ->
+    Singleton (Var_in_binding_pos.with_name_mode var name_mode)
+  | Set_of_closures { name_mode = _; closure_vars; } ->
+    Set_of_closures { name_mode; closure_vars; }
+  | Symbols _ -> t
+  | Depth _ -> t
 
 let must_be_singleton t =
   match t with
   | Singleton var -> var
-  | Set_of_closures _ | Symbols _ ->
+  | Set_of_closures _ | Symbols _ | Depth _ ->
     Misc.fatal_errorf "Bound name is not a [Singleton]:@ %a" print t
 
 let must_be_singleton_opt t =
   match t with
   | Singleton var -> Some var
-  | Set_of_closures _ | Symbols _ -> None
+  | Set_of_closures _ | Symbols _ | Depth _ -> None
 
 let must_be_set_of_closures t =
   match t with
   | Set_of_closures { closure_vars; _ } -> closure_vars
-  | Singleton _ | Symbols _ ->
+  | Singleton _ | Symbols _ | Depth _ ->
     Misc.fatal_errorf "Bound name is not a [Set_of_closures]:@ %a" print t
 
 let must_be_symbols t =
   match t with
   | Symbols symbols -> symbols
-  | Singleton _ | Set_of_closures _ ->
+  | Singleton _ | Set_of_closures _ | Depth _ ->
     Misc.fatal_errorf "Bound name is not a [Set_of_closures]:@ %a" print t
+
+let must_be_depth t =
+  match t with
+  | Depth depth_variable -> depth_variable
+  | Singleton _ | Set_of_closures _ | Symbols _ ->
+    Misc.fatal_errorf "Bound name is not a [Depth_variable]:@ %a" print t
+
+let exists_all_bound_vars t ~f =
+  match t with
+  | Singleton var -> f var
+  | Set_of_closures { closure_vars; _ } -> ListLabels.exists closure_vars ~f
+  | Symbols _
+  | Depth _ -> false
+
+let fold_all_bound_vars t ~init ~f =
+  match t with
+  | Singleton var -> f init var
+  | Set_of_closures { closure_vars; _ } ->
+    ListLabels.fold_left closure_vars ~init ~f
+  | Symbols _
+  | Depth _ -> init
 
 let all_bound_vars t =
   match t with
   | Singleton var -> Var_in_binding_pos.Set.singleton var
   | Set_of_closures { closure_vars; _ } ->
     Var_in_binding_pos.Set.of_list closure_vars
-  | Symbols _ -> Var_in_binding_pos.Set.empty
+  | Symbols _
+  | Depth _ -> Var_in_binding_pos.Set.empty
 
 let all_bound_vars' t =
   match t with
   | Singleton var -> Variable.Set.singleton (Var_in_binding_pos.var var)
   | Set_of_closures { closure_vars; _ } ->
     Variable.Set.of_list (List.map Var_in_binding_pos.var closure_vars)
-  | Symbols _ -> Variable.Set.empty
+  | Symbols _
+  | Depth _ -> Variable.Set.empty
 
 let let_symbol_scoping_rule t =
   match t with
-  | Singleton _ | Set_of_closures _ -> None
+  | Singleton _ | Set_of_closures _ | Depth _ -> None
   | Symbols { scoping_rule; _ } -> Some scoping_rule

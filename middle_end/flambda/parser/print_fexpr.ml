@@ -140,6 +140,7 @@ let kind ppf (k : kind) =
   | Value -> Format.pp_print_string ppf "val"
   | Naked_number nnk -> naked_number_kind ppf nnk
   | Fabricated -> Format.pp_print_string ppf "fabricated"
+  | Rec_info -> Format.pp_print_string ppf "rec_info"
 
 let kind_with_subkind ppf (k : kind_with_subkind) =
   match k with
@@ -593,6 +594,9 @@ let inlining_state ppf is =
   (* CR lmaurer: Separate Inlining_state.t from our AST types *)
   Inlining_state.print ppf is
 
+let code_size ?prefix ?suffix () ppf code_size =
+  pp_with ?prefix ?suffix ppf "%d" code_size
+
 let or_blank f ppf ob =
   match ob with
   | None -> Format.pp_print_string ppf "_"
@@ -752,11 +756,13 @@ and symbol_binding ppf (sb : symbol_binding) =
     Format.fprintf ppf "@]@ end@]"
 
 and code_binding ppf ({ recursive = rec_; inline; id; newer_version_of;
-                        param_arity; ret_arity; params_and_body } : code) =
-  Format.fprintf ppf "code@[<h>%a%a@] @[<hov2>%a%a"
+                        param_arity; ret_arity; params_and_body;
+                        code_size = cs } : code) =
+  Format.fprintf ppf "code@[<h>%a%a%a@] @[<hov2>%a%a"
     (recursive ~space:Before) rec_
     (inline_attribute_opt ~space:Before) inline
     code_id id
+    (code_size ~space:Before) cs
     (pp_option ~space:Before (pp_like "newer_version_of(%a)" code_id))
       newer_version_of;
   match params_and_body with

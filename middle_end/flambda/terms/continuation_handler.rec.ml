@@ -16,48 +16,6 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
-module Behaviour = struct
-  type t =
-    | Unreachable of { arity : Flambda_arity.With_subkinds.t; }
-    | Alias_for of {
-        arity : Flambda_arity.With_subkinds.t;
-        alias_for : Continuation.t;
-      }
-    | Unknown of { arity : Flambda_arity.With_subkinds.t; }
-
-  let apply_name_permutation t perm =
-    match t with
-    | Unreachable { arity = _; }
-    | Unknown { arity = _; } -> t
-    | Alias_for { arity; alias_for; } ->
-      let alias_for' = Name_permutation.apply_continuation perm alias_for in
-      if alias_for == alias_for' then t
-      else Alias_for { arity; alias_for = alias_for'; }
-
-  let arity t =
-    match t with
-    | Unreachable { arity; }
-    | Unknown { arity; }
-    | Alias_for { arity; alias_for = _; } -> arity
-
-  let all_ids_for_export t =
-    match t with
-    | Unreachable { arity = _; }
-    | Unknown { arity = _; } -> Ids_for_export.empty
-    | Alias_for { arity = _; alias_for; } ->
-      Ids_for_export.singleton_continuation alias_for
-
-  let import import_map t =
-    match t with
-    | Unreachable { arity = _; }
-    | Unknown { arity = _; } -> t
-    | Alias_for { arity; alias_for; } ->
-      let alias_for =
-        Ids_for_export.Import_map.continuation import_map alias_for
-      in
-      Alias_for { arity; alias_for; }
-end
-
 module T0 = struct
   type t = {
     num_normal_occurrences_of_params : Num_occurrences.t Variable.Map.t;
@@ -76,27 +34,22 @@ module T0 = struct
   let free_names { handler; num_normal_occurrences_of_params = _; } =
     Expr.free_names handler
 
-  let apply_name_permutation
+  let apply_renaming
         ({ handler; num_normal_occurrences_of_params; } as t) perm =
     let handler' =
-      Expr.apply_name_permutation handler perm
+      Expr.apply_renaming handler perm
     in
     if handler == handler' then t
     else { handler = handler'; num_normal_occurrences_of_params; }
 
   let all_ids_for_export { handler; num_normal_occurrences_of_params = _; } =
     Expr.all_ids_for_export handler
-
-  let import import_map { handler; num_normal_occurrences_of_params; } =
-    let handler = Expr.import import_map handler in
-    { handler; num_normal_occurrences_of_params; }
 end
 
 module A = Name_abstraction.Make_list (Kinded_parameter) (T0)
 
 type t = {
   abst : A.t;
-  behaviour : Behaviour.t;
   is_exn_handler : bool;
 }
 
@@ -118,31 +71,6 @@ let create params ~handler ~(free_names_of_handler : _ Or_unknown.t)
           in
           Variable.Map.add var num num_occurrences)
   in
-  let behaviour : Behaviour.t =
-    (* CR-someday mshinwell: This could be replaced by a more sophisticated
-       analysis, but for the moment we just use a simple syntactic check. *)
-    let arity = Kinded_parameter.List.arity_with_subkinds params in
-    if is_exn_handler then
-      Unknown { arity; }
-    else
-      match Expr.descr handler with
-      | Apply_cont apply_cont ->
-        begin match Apply_cont.trap_action apply_cont with
-        | Some _ -> Unknown { arity; }
-        | None ->
-          let args = Apply_cont.args apply_cont in
-          let params = List.map KP.simple params in
-          if Misc.Stdlib.List.compare Simple.compare args params = 0 then
-            Alias_for {
-              arity;
-              alias_for = Apply_cont.continuation apply_cont;
-            }
-          else
-            Unknown { arity; }
-        end
-      | Invalid Treat_as_unreachable -> Unreachable { arity; }
-      | _ -> Unknown { arity; }
-  in
   let t0 : T0.t =
     { num_normal_occurrences_of_params;
       handler;
@@ -150,7 +78,6 @@ let create params ~handler ~(free_names_of_handler : _ Or_unknown.t)
   in
   let abst = A.create params t0 in
   { abst;
-    behaviour;
     is_exn_handler;
   }
 
@@ -185,7 +112,7 @@ let pattern_match_pair t1 t2 ~f =
         Error Pattern_match_pair_error.Parameter_lists_have_different_lengths))
 
 let print_using_where_with_cache (recursive : Recursive.t) ~cache ppf k
-      ({ abst = _; behaviour = _; is_exn_handler; } as t) ~first =
+      ({ abst = _; is_exn_handler; } as t) ~first =
   let fprintf = Format.fprintf in
   if not first then begin
     fprintf ppf "@ "
@@ -212,7 +139,7 @@ let print_using_where_with_cache (recursive : Recursive.t) ~cache ppf k
       (Expr.print_with_cache ~cache) handler;
     fprintf ppf "@]")
 
-let print_with_cache ~cache ppf { abst; behaviour = _; is_exn_handler; } =
+let print_with_cache ~cache ppf { abst; is_exn_handler; } =
   Format.fprintf ppf "@[<hov 1>\
       @[<hov 1>(params_and_handler@ %a)@]@ \
       @[<hov 1>(is_exn_handler@ %b)@]\
@@ -225,27 +152,15 @@ let print ppf t =
 
 let is_exn_handler t = t.is_exn_handler
 
-let arity t = Behaviour.arity t.behaviour
-
-let behaviour t = t.behaviour
-
 let free_names t = A.free_names t.abst
 
-let apply_name_permutation ({ abst; behaviour; is_exn_handler; } as t) perm =
-  let abst' = A.apply_name_permutation abst perm in
-  let behaviour' = Behaviour.apply_name_permutation behaviour perm in
-  if abst == abst' && behaviour == behaviour' then t
+let apply_renaming ({ abst; is_exn_handler; } as t) perm =
+  let abst' = A.apply_renaming abst perm in
+  if abst == abst' then t
   else
     { abst = abst';
-      behaviour = behaviour';
       is_exn_handler;
     }
 
-let import import_map { abst; behaviour; is_exn_handler; } =
-  let abst = A.import import_map abst in
-  let behaviour = Behaviour.import import_map behaviour in
-  { abst; behaviour; is_exn_handler; }
-
-let all_ids_for_export { abst; behaviour; is_exn_handler = _; } =
-  Ids_for_export.union (A.all_ids_for_export abst)
-    (Behaviour.all_ids_for_export behaviour)
+let all_ids_for_export { abst; is_exn_handler = _; } =
+  A.all_ids_for_export abst

@@ -22,6 +22,9 @@
    functor applications produce "undefined recursive module" errors. *)
 
 (* CR mshinwell: tidy up! *)
+(* CR gbury: Consider using Tag.Scannable.t instead of Tag.t in
+             For_blocks, and use another module to specifically handle
+             record of floats *)
 module For_blocks : sig
   type t
 
@@ -69,7 +72,10 @@ module For_blocks : sig
       expect that doing the actual meet could give us a better result) and the
       last case where we already know what the result of the meet will be.
   *)
-  val get_field : t -> Target_imm.t -> Type_grammar.t Or_unknown.t
+  val get_field : t -> Target_imm.t -> Type_grammar.t Or_unknown_or_bottom.t
+
+  val get_variant_field :
+    t -> Tag.t -> Target_imm.t -> Type_grammar.t Or_unknown_or_bottom.t
 
   val is_bottom : t -> bool
 
@@ -103,6 +109,10 @@ module For_closures_entry_by_set_of_closures_contents : sig
   val get_singleton
      : t
     -> ((Closure_id.t * Set_of_closures_contents.t) * Closures_entry.t) option
+
+  (** Same as For_blocks.get_field: attempt to find the type associated to
+      the given environment variable without an expensive meet. *)
+  val get_env_var : t -> Var_within_closure.t -> Type_grammar.t Or_unknown.t
 
   val map_function_decl_types
      : t

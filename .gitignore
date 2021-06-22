@@ -40,6 +40,7 @@ _build
 
 # local to root directory
 /Makefile.common
+/Makefile.build_config
 /Makefile.config
 /autom4te.cache
 /ocamlc
@@ -124,14 +125,17 @@ middle_end/flambda/types/flambda_type.ml
 /ocamldoc/test_latex
 /ocamldoc/test
 
+/ocamltest/.dep
 /ocamltest/ocamltest
 /ocamltest/ocamltest.opt
 /ocamltest/ocamltest_config.ml
+/ocamltest/ocamltest_unix.ml
 /ocamltest/tsl_lexer.ml
 /ocamltest/tsl_parser.ml
 /ocamltest/tsl_parser.mli
 /ocamltest/ocamltest.html
 
+/otherlibs/*/.dep
 /otherlibs/dynlink/extract_crc
 /otherlibs/dynlink/dynlink_platform_intf.mli
 /otherlibs/dynlink/byte/dynlink.mli
@@ -171,6 +175,7 @@ middle_end/flambda/types/flambda_type.ml
 /otherlibs/win32unix/time.c
 /otherlibs/win32unix/unlink.c
 /otherlibs/win32unix/fsync.c
+/otherlibs/win32unix/mkdir.c
 
 /parsing/parser.ml
 /parsing/parser.mli
@@ -196,11 +201,8 @@ middle_end/flambda/types/flambda_type.ml
 /runtime/ocamlrund
 /runtime/ocamlruni
 /runtime/ld.conf
-/runtime/interp.a.lst
-/runtime/*.[sd]obj
 /runtime/.gdb_history
-/runtime/*.d.c
-/runtime/*.pic.c
+/runtime/.dep
 /runtime/domain_state32.inc
 /runtime/domain_state64.inc
 
@@ -236,7 +238,6 @@ middle_end/flambda/types/flambda_type.ml
 
 /tools/ocamldep
 /tools/ocamldep.opt
-/tools/ocamldep.bak
 /tools/ocamlprof
 /tools/ocamlprof.opt
 /tools/opnames.ml
@@ -247,7 +248,6 @@ middle_end/flambda/types/flambda_type.ml
 /tools/ocamlobjinfo.opt
 /tools/cvt_emit
 /tools/cvt_emit.opt
-/tools/cvt_emit.bak
 /tools/cvt_emit.ml
 /tools/ocamlcp
 /tools/ocamlcp.opt
@@ -262,9 +262,8 @@ middle_end/flambda/types/flambda_type.ml
 /tools/ocamlmklib
 /tools/ocamlmklib.opt
 /tools/ocamlmklibconfig.ml
-/tools/objinfo_helper
-/tools/read_cmt
-/tools/read_cmt.opt
+/tools/ocamlcmt
+/tools/ocamlcmt.opt
 /tools/cmpbyt
 /tools/cmpbyt.opt
 /tools/stripdebug

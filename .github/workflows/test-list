@@ -24,7 +24,11 @@
   tests/ephe-c-api
   tests/exotic-syntax
   tests/extension-constructor
+  tests/flambda2
+  tests/flambda2-aliases
   tests/flambda
+  tests/flambda-specialization
+  tests/flambda-unboxing
 # tests/float-unboxing              FAIL (FIXME)  'float_subst_boxed_number.ml' see flambdatest/mlexamples/float_unboxing.ml for a simplified error example
   tests/fma
   tests/formats-transition

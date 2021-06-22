@@ -107,10 +107,23 @@ let mk_function_sections f =
 ;;
 
 let mk_stop_after ~native f =
-  "-stop-after",
-  Arg.Symbol (Clflags.Compiler_pass.available_pass_names ~native, f),
+  let pass_names = Clflags.Compiler_pass.available_pass_names
+                     ~filter:(fun _ -> true)
+                     ~native
+  in
+  "-stop-after", Arg.Symbol (pass_names, f),
   " Stop after the given compilation pass."
 ;;
+
+let mk_save_ir_after ~native f =
+  let pass_names =
+    Clflags.Compiler_pass.(available_pass_names
+                             ~filter:can_save_ir_after
+                             ~native)
+  in
+  "-save-ir-after", Arg.Symbol (pass_names, f),
+  " Save intermediate representation after the given compilation pass\
+    (may be specified more than once)."
 
 let mk_dtypes f =
   "-dtypes", Arg.Unit f, " (deprecated) same as -annot"
@@ -166,9 +179,16 @@ let mk_inline_toplevel f =
 ;;
 
 let mk_inlining_report f =
-  "-inlining-report", Arg.Unit f, " Emit `.<round>.inlining' file(s) (one per \
-      round) showing the inliner's decisions"
+  "-inlining-report", Arg.Unit f, " Emit `.<round>.inlining.org' file(s) (one per \
+      round) showing the inliner's decisions, in a human readable format"
 ;;
+
+let mk_inlining_report_bin f =
+  "-inlining-report-bin", Arg.Unit f, " Emit `.<round>.inlining' \
+      file(s) (one per round) recording the inliner's decisions in a bianry \
+      format"
+;;
+
 
 let mk_dump_pass f =
   "-dump-pass", Arg.String f,
@@ -215,7 +235,7 @@ let mk_inline_cost arg descr default f =
   Printf.sprintf "-inline-%s-cost" arg,
   Arg.String f,
   Printf.sprintf "<n>|<round>=<n>[,...]  The cost of not removing %s during \
-      inlining (default %d, higher numbers more costly)"
+      inlining (default %f, higher numbers more costly)"
     descr
     default
 ;;
@@ -228,9 +248,30 @@ let mk_inline_prim_cost =
   mk_inline_cost "prim" "a primitive" Clflags.default_inline_prim_cost
 let mk_inline_branch_cost =
   mk_inline_cost "branch" "a conditional" Clflags.default_inline_branch_cost
-let mk_inline_indirect_cost =
+let mk_inline_indirect_call_cost =
   mk_inline_cost "indirect" "an indirect call"
-    Clflags.default_inline_indirect_cost
+    Clflags.default_inline_indirect_call_cost
+let mk_inline_poly_compare_cost =
+  mk_inline_cost "poly-compare" "a polymorphic comparison"
+    Clflags.default_inline_poly_compare_cost
+
+(* CR mshinwell: We need to have a check that the parameters provided by
+   the user are sensible, e.g. small_function_size <= large_function_size. *)
+
+let mk_inline_small_function_size f =
+  "-inline-small-function-size", Arg.String f,
+  Printf.sprintf "<n>|<round>=<n>[,...] Functions with a cost less than this \
+                  size will always be inlined (default %d)."
+    Clflags.default_inline_small_function_size
+;;
+
+let mk_inline_large_function_size f =
+  "-inline-large-function-size", Arg.String f,
+  Printf.sprintf "<n>|<round>=<n>[,...] Functions with a cost greater than this \
+                  size will never be inlined (default %d)."
+    Clflags.default_inline_large_function_size
+;;
+
 
 let mk_inline_lifting_benefit f =
   "-inline-lifting-benefit",
@@ -736,14 +777,6 @@ let mk_dclambda f =
   "-dclambda", Arg.Unit f, " (undocumented)"
 ;;
 
-let mk_dprepared_lambda f =
-  "-dprepared-lambda", Arg.Unit f, " Print terms after [Prepare_lambda]"
-;;
-
-let mk_dilambda f =
-  "-dilambda", Arg.Unit f, " Print Ilambda terms"
-;;
-
 let mk_dflambda f =
   "-dflambda", Arg.Unit f, " Print Flambda terms"
 ;;
@@ -976,15 +1009,15 @@ let mk_no_flambda_expert_phantom_lets f =
   " Do not generate phantom lets even when -g is specified"
 ;;
 
-let mk_flambda_expert_max_inlining_depth f =
-  "-flambda-expert-max-inlining-depth", Arg.Int f,
-  " Set maximum inlining depth"
-;;
-
 let mk_flambda_expert_max_block_size_for_projections f =
   "-flambda-expert-max-block-size-for-projections", Arg.Int f,
   " Do not simplify projections from blocks if the block size exceeds \
     this value"
+;;
+
+let mk_flambda_expert_max_unboxing_depth f =
+  "-flambda-expert-max-unboxing-depth", Arg.Int f,
+  " Do not unbox types deeper that this value"
 ;;
 
 let mk_flambda_debug_permute_every_name f =
@@ -1172,6 +1205,7 @@ module type Optcommon_options = sig
   val _inline : string -> unit
   val _inline_toplevel : string -> unit
   val _inlining_report : unit -> unit
+  val _inlining_report_bin : unit -> unit
   val _dump_pass : string -> unit
   val _inline_max_depth : string -> unit
   val _rounds : int -> unit
@@ -1180,8 +1214,11 @@ module type Optcommon_options = sig
   val _inline_alloc_cost : string -> unit
   val _inline_prim_cost : string -> unit
   val _inline_branch_cost : string -> unit
-  val _inline_indirect_cost : string -> unit
+  val _inline_indirect_call_cost : string -> unit
+  val _inline_poly_compare_cost : string -> unit
   val _inline_lifting_benefit : string -> unit
+  val _inline_small_function_size : string -> unit
+  val _inline_large_function_size : string -> unit
   val _unbox_closures : unit -> unit
   val _unbox_closures_factor : int -> unit
   val _inline_branch_factor : string -> unit
@@ -1243,15 +1280,12 @@ module type Optcommon_options = sig
   val _no_flambda_expert_inline_effects_in_cmm : unit -> unit
   val _flambda_expert_phantom_lets : unit -> unit
   val _no_flambda_expert_phantom_lets : unit -> unit
-  val _flambda_expert_max_inlining_depth : int -> unit
   val _flambda_expert_max_block_size_for_projections : int -> unit
+  val _flambda_expert_max_unboxing_depth : int -> unit
   val _flambda_debug_permute_every_name : unit -> unit
   val _no_flambda_debug_permute_every_name : unit -> unit
   val _flambda_debug_concrete_types_only_on_canonicals : unit -> unit
   val _no_flambda_debug_concrete_types_only_on_canonicals : unit -> unit
-
-  val _dprepared_lambda : unit -> unit
-  val _dilambda : unit -> unit
 end;;
 
 module type Optcomp_options = sig
@@ -1266,6 +1300,7 @@ module type Optcomp_options = sig
   val _afl_instrument : unit -> unit
   val _afl_inst_ratio : int -> unit
   val _function_sections : unit -> unit
+  val _save_ir_after : string -> unit
 end;;
 
 module type Opttop_options = sig
@@ -1493,6 +1528,7 @@ struct
     mk_g_opt F._g;
     mk_function_sections F._function_sections;
     mk_stop_after ~native:true F._stop_after;
+    mk_save_ir_after ~native:true F._save_ir_after;
     mk_i F._i;
     mk_I F._I;
     mk_impl F._impl;
@@ -1502,9 +1538,13 @@ struct
     mk_inline_branch_cost F._inline_branch_cost;
     mk_inline_call_cost F._inline_call_cost;
     mk_inline_prim_cost F._inline_prim_cost;
-    mk_inline_indirect_cost F._inline_indirect_cost;
+    mk_inline_indirect_call_cost F._inline_indirect_call_cost;
+    mk_inline_poly_compare_cost F._inline_poly_compare_cost;
     mk_inline_lifting_benefit F._inline_lifting_benefit;
+    mk_inline_small_function_size F._inline_small_function_size;
+    mk_inline_large_function_size F._inline_large_function_size;
     mk_inlining_report F._inlining_report;
+    mk_inlining_report_bin F._inlining_report_bin;
     mk_insn_sched F._insn_sched;
     mk_intf F._intf;
     mk_intf_suffix F._intf_suffix;
@@ -1607,10 +1647,10 @@ struct
       F._flambda_expert_phantom_lets;
     mk_no_flambda_expert_phantom_lets
       F._no_flambda_expert_phantom_lets;
-    mk_flambda_expert_max_inlining_depth
-      F._flambda_expert_max_inlining_depth;
     mk_flambda_expert_max_block_size_for_projections
       F._flambda_expert_max_block_size_for_projections;
+    mk_flambda_expert_max_unboxing_depth
+      F._flambda_expert_max_unboxing_depth;
     mk_flambda_debug_permute_every_name
       F._flambda_debug_permute_every_name;
     mk_no_flambda_debug_permute_every_name
@@ -1663,9 +1703,6 @@ struct
     mk_dump_into_file F._dump_into_file;
     mk_dump_pass F._dump_pass;
 
-    mk_dprepared_lambda F._dprepared_lambda;
-    mk_dilambda F._dilambda;
-
     mk_args F._args;
     mk_args0 F._args0;
   ]
@@ -1681,15 +1718,19 @@ module Make_opttop_options (F : Opttop_options) = struct
     mk_inline F._inline;
     mk_inline_toplevel F._inline_toplevel;
     mk_inlining_report F._inlining_report;
+    mk_inlining_report_bin F._inlining_report_bin;
     mk_rounds F._rounds;
     mk_inline_max_unroll F._inline_max_unroll;
     mk_inline_call_cost F._inline_call_cost;
     mk_inline_alloc_cost F._inline_alloc_cost;
     mk_inline_prim_cost F._inline_prim_cost;
     mk_inline_branch_cost F._inline_branch_cost;
-    mk_inline_indirect_cost F._inline_indirect_cost;
+    mk_inline_indirect_call_cost F._inline_indirect_call_cost;
+    mk_inline_poly_compare_cost F._inline_poly_compare_cost;
     mk_inline_lifting_benefit F._inline_lifting_benefit;
     mk_inline_branch_factor F._inline_branch_factor;
+    mk_inline_small_function_size F._inline_small_function_size;
+    mk_inline_large_function_size F._inline_large_function_size;
     mk_labels F._labels;
     mk_alias_deps F._alias_deps;
     mk_no_alias_deps F._no_alias_deps;
@@ -1770,10 +1811,10 @@ module Make_opttop_options (F : Opttop_options) = struct
       F._flambda_expert_phantom_lets;
     mk_no_flambda_expert_phantom_lets
       F._no_flambda_expert_phantom_lets;
-    mk_flambda_expert_max_inlining_depth
-      F._flambda_expert_max_inlining_depth;
     mk_flambda_expert_max_block_size_for_projections
       F._flambda_expert_max_block_size_for_projections;
+    mk_flambda_expert_max_unboxing_depth
+      F._flambda_expert_max_unboxing_depth;
     mk_flambda_debug_permute_every_name
       F._flambda_debug_permute_every_name;
     mk_no_flambda_debug_permute_every_name
@@ -1812,9 +1853,6 @@ module Make_opttop_options (F : Opttop_options) = struct
     mk_dinterval F._dinterval;
     mk_dstartup F._dstartup;
     mk_dump_pass F._dump_pass;
-
-    mk_dprepared_lambda F._dprepared_lambda;
-    mk_dilambda F._dilambda;
   ]
 end;;
 
@@ -1879,6 +1917,7 @@ let options_with_command_line_syntax_inner r after_rest =
       if not !after_rest then (after_rest := true; option ());
       arg a
     in
+    let rest_all a = option (); List.iter arg a in
     match spec with
     | Unit f -> Unit (fun a -> f a; option ())
     | Bool f -> Bool (fun a -> f a; option_with_arg (string_of_bool a))
@@ -1896,6 +1935,7 @@ let options_with_command_line_syntax_inner r after_rest =
        Tuple (loop ~name_opt hd :: List.map (loop ~name_opt:None) tl)
     | Symbol (l, f) -> Symbol (l, (fun a -> f a; option_with_arg a))
     | Rest f -> Rest (fun a -> f a; rest a)
+    | Rest_all f -> Rest_all (fun a -> f a; rest_all a)
     | Expand f -> Expand f
   in
   loop
@@ -1910,7 +1950,6 @@ let options_with_command_line_syntax options r =
 
 module Default = struct
   open Clflags
-  open Compenv
   let set r () = r := true
   let clear r () = r := false
 
@@ -1941,7 +1980,7 @@ module Default = struct
     let _unsafe_string = set unsafe_string
     let _w s = Warnings.parse_options false s
 
-    let anonymous = anonymous
+    let anonymous = Compenv.anonymous
 
   end
 
@@ -1961,7 +2000,7 @@ module Default = struct
     let _error_style =
       Misc.set_or_ignore error_style_reader.parse error_style
     let _nopervasives = set nopervasives
-    let _ppx s = first_ppx := (s :: (!first_ppx))
+    let _ppx s = Compenv.first_ppx := (s :: (!Compenv.first_ppx))
     let _unsafe = set unsafe
     let _warn_error s = Warnings.parse_options true s
     let _warn_help = Warnings.help_warnings
@@ -2005,11 +2044,11 @@ module Default = struct
       Float_arg_helper.parse spec "Syntax: -inline <n> | <round>=<n>[,...]"
         inline_threshold
     let _inline_alloc_cost spec =
-      Int_arg_helper.parse spec
+      Float_arg_helper.parse spec
         "Syntax: -inline-alloc-cost <n> | <round>=<n>[,...]"
         inline_alloc_cost
     let _inline_branch_cost spec =
-      Int_arg_helper.parse spec
+      Float_arg_helper.parse spec
         "Syntax: -inline-branch-cost <n> | <round>=<n>[,...]"
         inline_branch_cost
     let _inline_branch_factor spec =
@@ -2017,12 +2056,16 @@ module Default = struct
         "Syntax: -inline-branch-factor <n> | <round>=<n>[,...]"
         inline_branch_factor
     let _inline_call_cost spec =
-      Int_arg_helper.parse spec
+      Float_arg_helper.parse spec
         "Syntax: -inline-call-cost <n> | <round>=<n>[,...]" inline_call_cost
-    let _inline_indirect_cost spec =
-      Int_arg_helper.parse spec
-        "Syntax: -inline-indirect-cost <n> | <round>=<n>[,...]"
-        inline_indirect_cost
+    let _inline_indirect_call_cost spec =
+      Float_arg_helper.parse spec
+        "Syntax: -inline-indirect-call-cost <n> | <round>=<n>[,...]"
+        inline_indirect_call_cost
+    let _inline_poly_compare_cost spec =
+      Float_arg_helper.parse spec
+        "Syntax: -inline-poly-compare-cost <n> | <round>=<n>[,...]"
+        inline_poly_compare_cost
     let _inline_lifting_benefit spec =
       Int_arg_helper.parse spec
         "Syntax: -inline-lifting-benefit <n> | <round>=<n>[,...]"
@@ -2035,13 +2078,23 @@ module Default = struct
         "Syntax: -inline-max-unroll <n> | <round>=<n>[,...]"
         inline_max_unroll
     let _inline_prim_cost spec =
-      Int_arg_helper.parse spec
+      Float_arg_helper.parse spec
         "Syntax: -inline-prim-cost <n> | <round>=<n>[,...]" inline_prim_cost
     let _inline_toplevel spec =
       Int_arg_helper.parse spec
         "Syntax: -inline-toplevel <n> | <round>=<n>[,...]"
         inline_toplevel_threshold
+    let _inline_small_function_size spec =
+      Int_arg_helper.parse spec
+        "Syntax: -inline-small-function-size <n> | <round>=<n>[,...]"
+        inline_small_function_size
+    let _inline_large_function_size spec =
+      Int_arg_helper.parse spec
+        "Syntax: -inline-large-function-size <n> | <round>=<n>[,...]"
+        inline_large_function_size
+
     let _inlining_report () = inlining_report := true
+    let _inlining_report_bin () = inlining_report_bin := true
     let _insn_sched = set insn_sched
     let _no_insn_sched = clear insn_sched
     let _linscan = set use_linscan
@@ -2083,10 +2136,10 @@ module Default = struct
       set Flambda.Expert.phantom_lets
     let _no_flambda_expert_phantom_lets =
       clear Flambda.Expert.phantom_lets
-    let _flambda_expert_max_inlining_depth depth =
-      Flambda.Expert.max_inlining_depth := depth
     let _flambda_expert_max_block_size_for_projections size =
       Flambda.Expert.max_block_size_for_projections := Some size
+    let _flambda_expert_max_unboxing_depth depth =
+      Flambda.Expert.max_unboxing_depth := depth
     let _flambda_debug_permute_every_name =
       set Flambda.Debug.permute_every_name
     let _no_flambda_debug_permute_every_name =
@@ -2130,9 +2183,6 @@ module Default = struct
       use_inlining_arguments_set ~round:0 o1_arguments;
       *)
       ()
-
-    let _dprepared_lambda = set dump_prepared_lambda
-    let _dilambda = set dump_ilambda
   end
 
   module Compiler = struct
@@ -2143,8 +2193,8 @@ module Default = struct
     let _binannot = set binary_annotations
     let _c = set compile_only
     let _cc s = c_compiler := (Some s)
-    let _cclib s = defer (ProcessObjects (Misc.rev_split_words s))
-    let _ccopt s = first_ccopts := (s :: (!first_ccopts))
+    let _cclib s = Compenv.defer (ProcessObjects (Misc.rev_split_words s))
+    let _ccopt s = Compenv.first_ccopts := (s :: (!Compenv.first_ccopts))
     let _config = Misc.show_config_and_exit
     let _config_var = Misc.show_config_variable_and_exit
     let _dprofile () = profile_columns := Profile.all_columns; Profile.enable ()
@@ -2153,8 +2203,8 @@ module Default = struct
     let _for_pack s = for_package := (Some s)
     let _g = set debug
     let _i = set print_types
-    let _impl = impl
-    let _intf = intf
+    let _impl = Compenv.impl
+    let _intf = Compenv.intf
     let _intf_suffix s = Config.interface_suffix := s
     let _keep_docs = set keep_docs
     let _keep_locs = set keep_locs
@@ -2178,12 +2228,18 @@ module Default = struct
           | None -> stop_after := (Some pass)
           | Some p ->
             if not (p = pass) then
-              fatal "Please specify at most one -stop-after <pass>."
+              Compenv.fatal "Please specify at most one -stop-after <pass>."
+    let _save_ir_after pass =
+      let module P = Compiler_pass in
+        match P.of_string pass with
+        | None -> () (* this should not occur as we use Arg.Symbol *)
+        | Some pass ->
+          set_save_ir_after pass true
     let _thread = set use_threads
     let _verbose = set verbose
-    let _version () = print_version_string ()
-    let _vnum () = print_version_string ()
-    let _where () = print_standard_library ()
+    let _version () = Compenv.print_version_string ()
+    let _vnum () = Compenv.print_version_string ()
+    let _where () = Compenv.print_standard_library ()
     let _with_runtime = set with_runtime
     let _without_runtime = clear with_runtime
   end
@@ -2232,18 +2288,18 @@ module Default = struct
     let _afl_instrument = set afl_instrument
     let _function_sections () =
       assert Config.function_sections;
-      first_ccopts := ("-ffunction-sections" :: (!first_ccopts));
+      Compenv.first_ccopts := ("-ffunction-sections" ::(!Compenv.first_ccopts));
       function_sections := true
     let _nodynlink = clear dlcode
     let _output_complete_obj () =
       set output_c_object (); set output_complete_object ()
     let _output_obj = set output_c_object
     let _p () =
-      fatal
+      Compenv.fatal
         "Profiling with \"gprof\" (option `-p') is only supported up to \
          OCaml 4.08.0"
     let _shared () = shared := true; dlcode := true
-    let _v () = print_version_and_library "native-code compiler"
+    let _v () = Compenv.print_version_and_library "native-code compiler"
   end
 
   module Odoc_args = struct
@@ -2284,7 +2340,7 @@ third-party libraries such as Lwt, but with a different API."
     let _custom = set custom_runtime
     let _dcamlprimc = set keep_camlprimc_file
     let _dinstr = set dump_instr
-    let _dllib s = defer (ProcessDLLs (Misc.rev_split_words s))
+    let _dllib s = Compenv.defer (ProcessDLLs (Misc.rev_split_words s))
     let _dllpath s = dllpaths := ((!dllpaths) @ [s])
     let _make_runtime () =
       custom_runtime := true; make_runtime := true; link_everything := true
@@ -2298,8 +2354,8 @@ third-party libraries such as Lwt, but with a different API."
     let _output_obj () = output_c_object := true; custom_runtime := true
     let _use_prims s = use_prims := s
     let _use_runtime s = use_runtime := s
-    let _v () = print_version_and_library "compiler"
-    let _vmthread () = fatal vmthread_removed_message
+    let _v () = Compenv.print_version_and_library "compiler"
+    let _vmthread () = Compenv.fatal vmthread_removed_message
   end
 
 end

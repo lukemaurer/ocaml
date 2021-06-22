@@ -26,6 +26,7 @@ type t = private
   | Naked_int32 of Type_of_kind_naked_int32.t
   | Naked_int64 of Type_of_kind_naked_int64.t
   | Naked_nativeint of Type_of_kind_naked_nativeint.t
+  | Rec_info of Type_of_kind_rec_info.t
 
 val print : Format.formatter -> t -> unit
 
@@ -39,7 +40,7 @@ val kind : t -> Flambda_kind.t
 
 val alias_type_of : Flambda_kind.t -> Simple.t -> t
 
-val apply_rec_info : t -> Rec_info.t -> t Or_bottom.t
+val apply_coercion : t -> Coercion.t -> t Or_bottom.t
 
 val eviscerate : t -> Typing_env.t -> t
 
@@ -70,6 +71,8 @@ val any_naked_int32 : unit -> t
 val any_naked_int64 : unit -> t
 val any_naked_nativeint : unit -> t
 
+val any_rec_info : unit -> t
+
 val this_tagged_immediate : Target_imm.t -> t
 val this_boxed_float : Numbers.Float_by_bit_pattern.t -> t
 val this_boxed_int32 : Int32.t -> t
@@ -82,6 +85,8 @@ val these_boxed_floats : Numbers.Float_by_bit_pattern.Set.t -> t
 val these_boxed_int32s : Int32.Set.t -> t
 val these_boxed_int64s : Int64.Set.t -> t
 val these_boxed_nativeints : Targetint.Set.t -> t
+
+val this_rec_info : Rec_info_expr.t -> t
 
 val this_naked_immediate : Target_imm.t -> t
 val this_naked_float : Numbers.Float_by_bit_pattern.t -> t
@@ -164,6 +169,7 @@ val create_inlinable_function_declaration
   -> dbg:Debuginfo.t
   -> rec_info:Rec_info.t
   -> is_tupled:bool
+  -> must_be_inlined:bool
   -> Function_declaration_type.t
 
 val create_non_inlinable_function_declaration
@@ -189,14 +195,12 @@ val closure_with_at_least_this_closure_var
   -> closure_element_var:Variable.t
   -> t
 
-val array_of_length : length:t -> t
+val closure_with_at_least_these_closure_vars
+   : this_closure:Closure_id.t
+  -> Variable.t Var_within_closure.Map.t
+  -> t
 
-val make_suitable_for_environment0
-   : t
-  -> Typing_env.t
-  -> suitable_for:Typing_env.t
-  -> Typing_env_extension.With_extra_variables.t
-  -> Typing_env_extension.With_extra_variables.t * t
+val array_of_length : length:t -> t
 
 val make_suitable_for_environment
    : t

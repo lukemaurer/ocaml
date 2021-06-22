@@ -17,8 +17,8 @@
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
 module CUE = Continuation_uses_env
-module DE = Simplify_envs.Downwards_env
-module LCS = Simplify_envs.Lifted_constant_state
+module DE = Downwards_env
+module LCS = Lifted_constant_state
 module TE = Flambda_type.Typing_env
 
 module Static_const = Flambda.Static_const
@@ -29,23 +29,29 @@ type t = {
   shareable_constants : Symbol.t Static_const.Map.t;
   used_closure_vars : Name_occurrences.t;
   lifted_constants : LCS.t;
+  data_flow : Data_flow.t;
+  demoted_exn_handlers : Continuation.Set.t;
 }
 
 let print ppf
       { denv; continuation_uses_env; shareable_constants; used_closure_vars;
-        lifted_constants; } =
+        lifted_constants; data_flow; demoted_exn_handlers; } =
   Format.fprintf ppf "@[<hov 1>(\
       @[<hov 1>(denv@ %a)@]@ \
       @[<hov 1>(continuation_uses_env@ %a)@]@ \
       @[<hov 1>(shareable_constants@ %a)@]@ \
       @[<hov 1>(used_closure_vars@ %a)@]@ \
-      @[<hov 1>(lifted_constant_state@ %a)@]\
+      @[<hov 1>(lifted_constant_state@ %a)@]@ \
+      @[<hov 1>(data_flow@ %a)@]@ \
+      @[<hov 1>(demoted_exn_handlers@ %a)@]\
       )@]"
     DE.print denv
     CUE.print continuation_uses_env
     (Static_const.Map.print Symbol.print) shareable_constants
     Name_occurrences.print used_closure_vars
     LCS.print lifted_constants
+    Data_flow.print data_flow
+    Continuation.Set.print demoted_exn_handlers
 
 let create denv continuation_uses_env =
   { denv;
@@ -53,9 +59,18 @@ let create denv continuation_uses_env =
     shareable_constants = Static_const.Map.empty;
     used_closure_vars = Name_occurrences.empty;
     lifted_constants = LCS.empty;
+    data_flow = Data_flow.empty;
+    demoted_exn_handlers = Continuation.Set.empty;
   }
 
 let denv t = t.denv
+
+let data_flow t = t.data_flow
+
+let [@inline always] map_data_flow t ~f =
+  { t with
+    data_flow = f t.data_flow;
+  }
 
 let [@inline always] map_denv t ~f =
   { t with
@@ -111,9 +126,6 @@ let typing_env t = DE.typing_env (denv t)
 let add_variable t var ty =
   with_denv t (DE.add_variable (denv t) var ty)
 
-let extend_typing_environment t env_extension =
-  with_denv t (DE.extend_typing_environment (denv t) env_extension)
-
 let get_typing_env_no_more_than_one_use t k =
   CUE.get_typing_env_no_more_than_one_use t.continuation_uses_env k
 
@@ -125,7 +137,7 @@ let add_lifted_constant t const =
 let add_lifted_constant_also_to_env t const =
   { t with
     lifted_constants = LCS.add t.lifted_constants const;
-    denv = DE.add_lifted_constant t.denv const;
+    denv = LCS.add_singleton_to_denv t.denv const;
   }
 
 let add_lifted_constants_from_list t consts =
@@ -184,3 +196,19 @@ let all_continuations_used t =
 
 let with_used_closure_vars t ~used_closure_vars =
   { t with used_closure_vars = used_closure_vars; }
+
+let set_do_not_rebuild_terms_and_disable_inlining t =
+  { t with denv = DE.set_do_not_rebuild_terms_and_disable_inlining t.denv; }
+
+let are_rebuilding_terms t =
+  DE.are_rebuilding_terms t.denv
+
+let do_not_rebuild_terms t =
+  Are_rebuilding_terms.do_not_rebuild_terms (are_rebuilding_terms t)
+
+let demote_exn_handler t cont =
+  { t with
+    demoted_exn_handlers = Continuation.Set.add cont t.demoted_exn_handlers;
+  }
+
+let demoted_exn_handlers t = t.demoted_exn_handlers

@@ -308,7 +308,8 @@ let const c : Fexpr.const =
 
 let simple env s =
   Simple.pattern_match s
-    ~name:(fun n : Fexpr.simple ->
+    (* CR lmaurer: Add coercions *)
+    ~name:(fun n ~coercion:_ : Fexpr.simple ->
       match name env n with
       | Var v -> Var v
       | Symbol s -> Symbol s
@@ -320,6 +321,7 @@ let kind (k : Flambda_kind.t) : Fexpr.kind =
   | Value -> Value
   | Fabricated -> Fabricated
   | Naked_number nnk -> Naked_number nnk
+  | Rec_info -> Rec_info
 
 let kind_with_subkind (k : Flambda_kind.With_subkind.t)
 : Fexpr.kind_with_subkind =
@@ -437,6 +439,8 @@ let varop (op : Flambda_primitive.variadic_primitive) : Fexpr.varop =
 
 let prim env (p : Flambda_primitive.t) : Fexpr.prim =
   match p with
+  | Nullary _ ->
+    Misc.fatal_errorf "TODO: Nullary primitive"
   | Unary (op, arg) ->
     Unary (unop env op, simple env arg)
   | Binary (op, arg1, arg2) ->
@@ -531,6 +535,8 @@ and let_expr env le =
       dynamic_let_expr env closure_vars defining_expr body
     | Symbols { bound_symbols; scoping_rule } ->
       static_let_expr env bound_symbols scoping_rule defining_expr body
+    | Depth _dv ->
+      Misc.fatal_error "TODO: depth variables"
   )
 and dynamic_let_expr env vars (defining_expr : Flambda.Named.t) body
       : Fexpr.expr =
@@ -550,7 +556,7 @@ and dynamic_let_expr env vars (defining_expr : Flambda.Named.t) body
         List.map (fun decl : Fexpr.named -> Fexpr.Closure decl) fun_decls
       in
       defining_exprs, closure_elements
-    | Static_consts _ ->
+    | Static_consts _ | Rec_info _ ->
       assert false
   in
   if (List.compare_lengths vars defining_exprs <> 0) then
@@ -650,7 +656,8 @@ and static_let_expr env bound_symbols scoping_rule defining_expr body
           let params_and_body =
             Flambda.Function_params_and_body.pattern_match params_and_body
               ~f:(fun ~return_continuation exn_continuation params ~body
-                  ~my_closure ~is_my_closure_used:_ : Fexpr.params_and_body ->
+                  ~my_closure ~is_my_closure_used:_ ~my_depth
+                    : Fexpr.params_and_body ->
                 let ret_cont, env =
                   Env.bind_named_continuation env return_continuation
                 in
@@ -664,6 +671,8 @@ and static_let_expr env bound_symbols scoping_rule defining_expr body
                 in
                 let closure_var, env = Env.bind_var env my_closure in
                 let body = expr env body in
+                (* CR lmaurer: Add depth variables to syntax *)
+                ignore my_depth;
                 (* CR-someday lmaurer: Omit exn_cont, closure_var if
                    not used *)
                 { params; ret_cont; exn_cont; closure_var; body }
@@ -671,8 +680,13 @@ and static_let_expr env bound_symbols scoping_rule defining_expr body
           in
           Present params_and_body
       in
+      let code_size =
+        Flambda.Code.cost_metrics code
+        |> Flambda.Cost_metrics.size
+        |> Code_size.to_int
+      in
       Code { id = code_id; newer_version_of; param_arity; ret_arity; recursive;
-             inline; params_and_body}
+             inline; params_and_body; code_size; }
     | _, _ ->
       Misc.fatal_errorf "Mismatched pattern and constant: %a vs. %a"
         Bound_symbols.Pattern.print pat
@@ -778,7 +792,7 @@ and cont_handler env cont_id (sort : Continuation.Sort.t) h =
 and apply_expr env (app : Apply_expr.t) : Fexpr.expr =
   let func =
     Simple.pattern_match (Apply_expr.callee app)
-      ~name:(fun n -> name env n)
+      ~name:(fun n ~coercion:_ -> (* CR lmaurer: Add coercions *) name env n)
       ~const:(fun c ->
         Misc.fatal_errorf "Unexpected const as callee: %a"
           Reg_width_things.Const.print c

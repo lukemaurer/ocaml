@@ -140,19 +140,30 @@ module Typing_env : sig
     -> Typing_env_extension.With_extra_variables.t
     -> t
 
-  (** Raises [Not_found] if no canonical [Simple] was found. *)
+  (** Raises [Not_found] if no canonical [Simple] was found.
+      [name_mode_of_existing_simple] can be provided to improve performance
+      of this function. *)
   val get_canonical_simple_exn
      : t
     -> ?min_name_mode:Name_mode.t
+    -> ?name_mode_of_existing_simple:Name_mode.t
     -> Simple.t
     -> Simple.t
 
   (** Raises [Not_found] if no canonical [Simple] was found. *)
-  val get_canonical_simple_with_kind_exn
+  val type_simple_in_term_exn
      : t
     -> ?min_name_mode:Name_mode.t
     -> Simple.t
-    -> Simple.t * Flambda_kind.t
+    -> flambda_type
+
+  (** Raises [Not_found] if no canonical [Simple] was found. *)
+  val get_alias_then_canonical_simple_exn
+     : t
+    -> ?min_name_mode:Name_mode.t
+    -> ?name_mode_of_existing_simple:Name_mode.t
+    -> flambda_type
+    -> Simple.t
 
   val add_to_code_age_relation : t -> newer:Code_id.t -> older:Code_id.t -> t
 
@@ -178,7 +189,7 @@ module Typing_env : sig
      : t
     -> min_name_mode:Name_mode.t
     -> Simple.t
-    -> Simple.Set.t
+    -> Aliases.Alias_set.t
 
   val clean_for_export : t -> reachable_names:Name_occurrences.t -> t
 
@@ -198,7 +209,7 @@ module Typing_env : sig
 
     val all_ids_for_export : t -> Ids_for_export.t
 
-    val import : Ids_for_export.Import_map.t -> t -> t
+    val apply_renaming : t -> Renaming.t -> t
 
     val merge : t -> t -> t
   end
@@ -232,8 +243,8 @@ module Function_declaration_type : sig
 
     val code_id : t -> Code_id.t
     val dbg : t -> Debuginfo.t
-    val rec_info : t -> Rec_info.t
     val is_tupled : t -> bool
+    val must_be_inlined : t -> bool
   end
 
   module Non_inlinable : sig
@@ -277,7 +288,7 @@ val make_suitable_for_environment
   -> bind_to:Name.t
   -> Typing_env_extension.With_extra_variables.t
 
-val apply_rec_info : flambda_type -> Rec_info.t -> flambda_type Or_bottom.t
+val apply_coercion : flambda_type -> Coercion.t -> flambda_type Or_bottom.t
 
 (* Remove any information from the inside of the type, leaving only its
    outer structure, and in some cases leaving only "Unknown".  Alias types
@@ -315,6 +326,8 @@ val any_naked_int32 : unit -> t
 val any_naked_int64 : unit -> t
 val any_naked_nativeint : unit -> t
 
+val any_rec_info : unit -> t
+
 (** Building of types representing tagged / boxed values from specified
     constants. *)
 val this_tagged_immediate : Target_imm.t -> t
@@ -336,6 +349,8 @@ val this_naked_float : Numbers.Float_by_bit_pattern.t -> t
 val this_naked_int32 : Int32.t -> t
 val this_naked_int64 : Int64.t -> t
 val this_naked_nativeint : Targetint.t -> t
+
+val this_rec_info : Rec_info_expr.t -> t
 
 val these_naked_immediates : Target_imm.Set.t -> t
 val these_naked_floats : Numbers.Float_by_bit_pattern.Set.t -> t
@@ -403,6 +418,7 @@ val create_inlinable_function_declaration
   -> dbg:Debuginfo.t
   -> rec_info:Rec_info.t
   -> is_tupled:bool
+  -> must_be_inlined:bool
   -> Function_declaration_type.t
 
 (** Create a description of a function declaration whose code is unknown.
@@ -430,6 +446,11 @@ val closure_with_at_least_this_closure_var
   -> closure_element_var:Variable.t
   -> flambda_type
 
+val closure_with_at_least_these_closure_vars
+   : this_closure:Closure_id.t
+  -> Variable.t Var_within_closure.Map.t
+  -> flambda_type
+
 val array_of_length : length:flambda_type -> flambda_type
 
 (** Construct a type equal to the type of the given name.  (The name
@@ -454,6 +475,8 @@ val bottom_types_from_arity : Flambda_arity.t -> t list
 (** Whether the given type says that a term of that type can never be
     constructed (in other words, it is [Invalid]). *)
 val is_bottom : (t -> bool) type_accessor
+
+val is_obviously_bottom : t -> bool
 
 val type_for_const : Reg_width_const.t -> t
 val kind_for_const : Reg_width_const.t -> Flambda_kind.t
@@ -496,15 +519,27 @@ val prove_naked_int64s : Typing_env.t -> t -> Numbers.Int64.Set.t proof
 
 val prove_naked_nativeints : Typing_env.t -> t -> Targetint.Set.t proof
 
-type variant_proof = private {
-  const_ctors : Target_imm.Set.t;
+type variant_like_proof = private {
+  const_ctors : Target_imm.Set.t Or_unknown.t;
   non_const_ctors_with_sizes : Targetint.OCaml.t Tag.Scannable.Map.t;
 }
 
-val prove_variant
+val prove_variant_like
    : Typing_env.t
   -> t
-  -> variant_proof proof_allowing_kind_mismatch
+  -> variant_like_proof proof_allowing_kind_mismatch
+
+(** If [ty] is known to represent a boxed number or a tagged integer,
+    [prove_is_a_boxed_number env ty] is [Proved kind]. [kind] is the kind of
+    the unboxed number.
+    If [ty] is known to represent something of kind value that is not a number
+    [prove_is_a_boxed_number env ty] is [Invalid].
+    Otherwise it is [Unknown] or [Wrong_kind] when [ty] is not of kind value.
+*)
+val prove_is_a_boxed_number
+   : Typing_env.t
+  -> t
+  -> Flambda_kind.Boxable_number.t proof_allowing_kind_mismatch
 
 val prove_is_a_tagged_immediate
    : Typing_env.t
@@ -565,11 +600,77 @@ val prove_single_closures_entry'
 
 val prove_strings : Typing_env.t -> t -> String_info.Set.t proof
 
+(** Attempt to show that the provided type describes the tagged version of
+    a unique naked immediate [Simple].
+    This function will return [Unknown] if values of the provided type might
+    sometimes, but not always, be a tagged immediate (for example if it is a
+    variant type involving blocks). *)
+val prove_is_always_tagging_of_simple
+   : Typing_env.t
+  -> min_name_mode:Name_mode.t
+  -> t
+  -> Simple.t proof
+
+(** Attempt to show that the provided type _can_ describe, but might not
+    always describe, the tagged version of a unique naked immediate [Simple].
+    It is guaranteed that if a [Simple] is returned, the type does not
+    describe any other tagged immediate. *)
+val prove_could_be_tagging_of_simple
+   : Typing_env.t
+  -> min_name_mode:Name_mode.t
+  -> t
+  -> Simple.t proof
+
+val prove_boxed_float_containing_simple
+   : Typing_env.t
+  -> min_name_mode:Name_mode.t
+  -> t
+  -> Simple.t proof
+
+val prove_boxed_int32_containing_simple
+   : Typing_env.t
+  -> min_name_mode:Name_mode.t
+  -> t
+  -> Simple.t proof
+
+val prove_boxed_int64_containing_simple
+   : Typing_env.t
+  -> min_name_mode:Name_mode.t
+  -> t
+  -> Simple.t proof
+
+val prove_boxed_nativeint_containing_simple
+   : Typing_env.t
+  -> min_name_mode:Name_mode.t
+  -> t
+  -> Simple.t proof
+
 val prove_block_field_simple
    : Typing_env.t
+  -> min_name_mode:Name_mode.t
   -> t
   -> Target_imm.t
   -> Simple.t proof
+
+val prove_variant_field_simple
+   : Typing_env.t
+  -> min_name_mode:Name_mode.t
+  -> t
+  -> Tag.t
+  -> Target_imm.t
+  -> Simple.t proof
+
+val prove_project_var_simple
+   : Typing_env.t
+  -> min_name_mode:Name_mode.t
+  -> t
+  -> Var_within_closure.t
+  -> Simple.t proof
+
+val prove_rec_info
+   : Typing_env.t
+  -> t
+  -> Rec_info_expr.t proof
 
 type var_or_symbol_or_tagged_immediate = private
   | Var of Variable.t

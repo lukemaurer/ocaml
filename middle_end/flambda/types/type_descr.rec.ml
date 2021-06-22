@@ -58,17 +58,17 @@ module Make (Head : Type_head_intf.S
     let print ppf t =
       print_with_cache ~cache:(Printing_cache.create ()) ppf t
 
-    let apply_name_permutation t perm =
-      if Name_permutation.is_empty perm then t
+    let apply_renaming t renaming =
+      if Renaming.is_empty renaming then t
       else
         match t with
         | No_alias Bottom | No_alias Unknown -> t
         | No_alias (Ok head) ->
-          let head' = Head.apply_name_permutation head perm in
+          let head' = Head.apply_renaming head renaming in
           if head == head' then t
           else No_alias (Ok head')
         | Equals simple ->
-          let simple' = Simple.apply_name_permutation simple perm in
+          let simple' = Simple.apply_renaming simple renaming in
           if simple == simple' then t
           else Equals simple'
 
@@ -82,6 +82,8 @@ module Make (Head : Type_head_intf.S
           Name_mode.in_types
   end
 
+  (* CR mshinwell: Flambda 2 compilation is causing calls to e.g. [descr]
+     to be indirect. *)
   include With_delayed_permutation.Make (Descr)
 
   let all_ids_for_export t =
@@ -89,16 +91,6 @@ module Make (Head : Type_head_intf.S
     | No_alias Bottom | No_alias Unknown -> Ids_for_export.empty
     | No_alias (Ok head) -> Head.all_ids_for_export head
     | Equals simple -> Ids_for_export.from_simple simple
-
-  let import import_map t =
-    let descr : Descr.t =
-      match descr t with
-      | (No_alias Unknown | No_alias Bottom) as descr -> descr
-      | No_alias (Ok head) -> No_alias (Ok (Head.import import_map head))
-      | Equals simple ->
-        Equals (Ids_for_export.Import_map.simple import_map simple)
-    in
-    create descr
 
   let print_with_cache ~cache ppf t =
     Descr.print_with_cache ~cache ppf (descr t)
@@ -137,18 +129,17 @@ module Make (Head : Type_head_intf.S
       | Equals alias -> alias
       | No_alias _ -> assert false
 
-  let apply_rec_info t rec_info : _ Or_bottom.t =
+  let apply_coercion t coercion : _ Or_bottom.t =
     match descr t with
     | Equals simple ->
-      let newer_rec_info = Some rec_info in
-      begin match Simple.merge_rec_info simple ~newer_rec_info with
+      begin match Simple.apply_coercion simple coercion with
       | None -> Bottom
       | Some simple -> Ok (create_equals simple)
       end
     | No_alias Unknown -> Ok t
     | No_alias Bottom -> Bottom
     | No_alias (Ok head) ->
-      Or_bottom.map (Head.apply_rec_info head rec_info)
+      Or_bottom.map (Head.apply_coercion head coercion)
         ~f:(fun head -> create head)
 
   let force_to_head ~force_to_kind t =
@@ -180,26 +171,22 @@ module Make (Head : Type_head_intf.S
           in
           force_to_head ~force_to_kind typ
         in
-        let [@inline always] name name : _ Or_unknown_or_bottom.t =
+        let [@inline always] name name ~coercion : _ Or_unknown_or_bottom.t =
           let t = force_to_kind (TE.find env name (Some kind)) in
           match descr t with
           | No_alias Bottom -> Bottom
           | No_alias Unknown -> Unknown
-          | No_alias (Ok head) -> Ok head
-            (* CR mshinwell: Fix Rec_info
-            begin match rec_info with
-            | None -> Ok head
-            | Some rec_info ->
-              (* CR mshinwell: check rec_info handling is correct, after
-                 recent changes in this area *)
-              (* [simple] already has [rec_info] applied to it (see
+          | No_alias (Ok head) ->
+            if Coercion.is_id coercion then
+              Ok head
+            else
+              (* [simple] already has [coercion] applied to it (see
                  [get_canonical_simple], above).  However we also need to
                  apply it to the expanded head of the type. *)
-              match Head.apply_rec_info head rec_info with
+              begin match Head.apply_coercion head coercion with
               | Bottom -> Bottom
               | Ok head -> Ok head
-            end
-            *)
+              end
           | Equals _ ->
             Misc.fatal_errorf "Canonical alias %a should never have \
                 [Equals] type %a:@ %a"
@@ -236,26 +223,34 @@ module Make (Head : Type_head_intf.S
           end
         | Equals _ -> assert false
 
-  let add_equation _env (simple : Simple.t) ty env_extension =
+  let add_equation _env (simple : Simple.t) ty_of_simple env_extension ~to_type =
     match Simple.must_be_name simple with
     (* CR mshinwell: Does this need to use some kind of [meet_equation]? *)
-    | Some name -> TEE.add_or_replace_equation env_extension name ty
+    | Some (name, coercion_from_name_to_simple) ->
+      let coercion_from_simple_to_name =
+        Coercion.inverse coercion_from_name_to_simple
+      in
+      let ty_of_name =
+        match apply_coercion ty_of_simple coercion_from_simple_to_name with
+        | Ok ty -> ty
+        | Bottom -> bottom ()
+      in
+      TEE.add_or_replace_equation env_extension name (to_type ty_of_name)
     | None -> env_extension
 
   let all_aliases_of env simple_opt ~in_env =
     match simple_opt with
-    | None -> Simple.Set.empty
+    | None -> Aliases.Alias_set.empty
     | Some simple ->
       let simples =
-        Simple.Set.add simple (
-          TE.aliases_of_simple_allowable_in_types env simple)
+        TE.aliases_of_simple_allowable_in_types env simple
       in
       (*
       Format.eprintf "Aliases of %a are: %a\n%!"
         Simple.print simple
         Simple.Set.print simples;
       *)
-      Simple.Set.filter (fun simple ->
+      Aliases.Alias_set.filter ~f:(fun simple ->
           Typing_env.mem_simple in_env simple)
         simples
 
@@ -368,7 +363,7 @@ module Make (Head : Type_head_intf.S
         | Left_head_unchanged ->
           let env_extension =
             TEE.empty ()
-            |> add_equation env simple2 (to_type (create_no_alias head1))
+            |> add_equation env simple2 (create_no_alias head1) ~to_type
           in
           Ok (to_type (create_equals simple2), env_extension)
         | Right_head_unchanged ->
@@ -376,7 +371,7 @@ module Make (Head : Type_head_intf.S
         | New_head (head, env_extension) ->
           let env_extension =
             env_extension
-            |> add_equation env simple2 (to_type (create_no_alias head))
+            |> add_equation env simple2 (create_no_alias head) ~to_type
           in
           match head with
           | Bottom -> Bottom
@@ -396,13 +391,13 @@ module Make (Head : Type_head_intf.S
         | Right_head_unchanged ->
           let env_extension =
             TEE.empty ()
-            |> add_equation env simple1 (to_type (create_no_alias head2))
+            |> add_equation env simple1 ~to_type (create_no_alias head2)
           in
           Ok (to_type (create_equals simple1), env_extension)
         | New_head (head, env_extension) ->
           let env_extension =
             env_extension
-            |> add_equation env simple1 (to_type (create_no_alias head))
+            |> add_equation env simple1 ~to_type (create_no_alias head)
           in
           match head with
           | Bottom -> Bottom
@@ -431,20 +426,20 @@ module Make (Head : Type_head_intf.S
           | Left_head_unchanged ->
             let env_extension =
               TEE.empty ()
-              |> add_equation env simple2 (to_type (create_equals simple1))
+              |> add_equation env simple2 ~to_type (create_equals simple1)
             in
             Ok (to_type (create_equals simple1), env_extension)
           | Right_head_unchanged ->
             let env_extension =
               TEE.empty ()
-              |> add_equation env simple1 (to_type (create_equals simple2))
+              |> add_equation env simple1 ~to_type (create_equals simple2)
             in
             Ok (to_type (create_equals simple2), env_extension)
           | New_head (head, env_extension) ->
             let env_extension =
               env_extension
-              |> add_equation env simple1 (to_type (create_no_alias head))
-              |> add_equation env simple2 (to_type (create_equals simple1))
+              |> add_equation env simple1 ~to_type (create_no_alias head)
+              |> add_equation env simple2 ~to_type (create_equals simple1)
             in
             (* It makes things easier (to check if the result of [meet] was
                bottom) to not return "=simple" in the bottom case.  This is ok
@@ -479,41 +474,23 @@ module Make (Head : Type_head_intf.S
         ~right_env:(Join_env.right_join_env join_env)
         ~right_ty:t2
     in
-    let choose_shared_alias ~shared_aliases =
-      match Simple.Set.elements shared_aliases with
-      | [] -> None
-      | shared_aliases ->
-        (* We prefer [Const]s, and if not, [Symbol]s. *)
-        (* CR mshinwell: Add this as a supported ordering in [Simple] *)
-        let shared_aliases =
-          List.sort (fun simple1 simple2 ->
-              let is_const1 = Simple.is_const simple1 in
-              let is_const2 = Simple.is_const simple2 in
-              match is_const1, is_const2 with
-              | true, false -> -1
-              | false, true -> 1
-              | true, true | false, false ->
-                let is_symbol1 = Simple.is_symbol simple1 in
-                let is_symbol2 = Simple.is_symbol simple2 in
-                match is_symbol1, is_symbol2 with
-                | true, false -> -1
-                | false, true -> 1
-                | true, true | false, false ->
-                  Simple.compare simple1 simple2)
-            shared_aliases
-        in
-        Some (create_equals (List.hd shared_aliases))
-    in
+
     (* CR mshinwell: Add shortcut when the canonical simples are equal *)
     let shared_aliases =
       let shared_aliases =
-        match canonical_simple1, canonical_simple2 with
-        | None, _ | _, None -> Simple.Set.empty
-        | Some simple1, Some simple2 ->
+        match canonical_simple1, head1, canonical_simple2, head2 with
+        | None, _, None, _
+        | None, (Ok _ | Unknown), _, _
+        | _, _, None, (Ok _ | Unknown) -> Aliases.Alias_set.empty
+        | Some simple1, _, _, Bottom ->
+          Aliases.Alias_set.singleton simple1
+        | _, Bottom, Some simple2, _ ->
+          Aliases.Alias_set.singleton simple2
+        | Some simple1, _, Some simple2, _ ->
           if Simple.same simple1 simple2
-          then Simple.Set.singleton simple1
+          then Aliases.Alias_set.singleton simple1
           else
-            Simple.Set.inter
+            Aliases.Alias_set.inter
               (all_aliases_of (Join_env.left_join_env join_env)
                 canonical_simple1
                 ~in_env:(Join_env.target_join_env join_env))
@@ -526,8 +503,8 @@ module Make (Head : Type_head_intf.S
       | Some bound_name ->
         (* CR vlaviron: this ensures that we're not creating an alias
            to a different simple that is just bound_name with different
-           rec_info. Such an alias is forbidden. *)
-        Simple.Set.filter (fun simple ->
+           coercion. Such an alias is forbidden. *)
+        Aliases.Alias_set.filter ~f:(fun simple ->
             not (Simple.same simple (Simple.name bound_name)))
           shared_aliases
     in
@@ -535,8 +512,8 @@ module Make (Head : Type_head_intf.S
       Format.eprintf "Shared aliases:@ %a\n%!"
         Simple.Set.print shared_aliases;
         *)
-    match choose_shared_alias ~shared_aliases with
-    | Some joined_ty -> Known (to_type joined_ty)
+    match Aliases.Alias_set.find_best shared_aliases with
+    | Some alias -> Known (to_type (create_equals alias))
     | None ->
       match canonical_simple1, canonical_simple2 with
       | Some simple1, Some simple2

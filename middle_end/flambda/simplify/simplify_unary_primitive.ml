@@ -38,12 +38,12 @@ module Int64 = Numbers.Int64
             {(thd3/0
               (Ok (Inlinable (code_id thd3_0_tuple_stub/2) (param_arity 𝕍)
                    (result_arity 𝕍) (stub true) (dbg ) (inline Default_inline)
-                   (is_a_functor false) (recursive Non_recursive) (rec_info ((depth 1) (unroll_to None))))))
+                   (is_a_functor false) (recursive Non_recursive) (coercion ((depth 1) (unroll_to None))))))
              (thd3/1
               (Ok (Inlinable (code_id thd3_0/3) (param_arity 𝕍 ⨯ 𝕍 ⨯ 𝕍)
                    (result_arity 𝕍) (stub false) (dbg tuple_stub.ml:1,9--20)
                    (inline Default_inline) (is_a_functor false) (recursive Non_recursive)
-                   (rec_info ((depth 1) (unroll_to None))))))})
+                   (coercion ((depth 1) (unroll_to None))))))})
            (closure_types ((components_by_index {(thd3/0 (Val (= Tuple_stub.camlTuple_stub__thd3_2))) (thd3/1 (Val (= Tuple_stub.camlTuple_stub__thd3_3)))})))
            (closure_var_types ((components_by_index {})))))}) (other_tags Bottom)))
     unboxed_version/48 : (Val (= Tuple_stub.camlTuple_stub__thd3_3)))))
@@ -74,47 +74,34 @@ let simplify_select_closure ~move_from ~move_to
 
 let simplify_project_var closure_id closure_element ~min_name_mode dacc
       ~original_term ~arg:_closure ~arg_ty:closure_ty ~result_var =
-  let reachable, env_extension, dacc =
-    Simplify_common.simplify_projection
-      dacc ~original_term ~deconstructing:closure_ty
-      ~shape:(T.closure_with_at_least_this_closure_var
-                ~this_closure:closure_id
-                closure_element
-                ~closure_element_var:(Var_in_binding_pos.var result_var))
-      ~result_var ~result_kind:K.value
-  in
-  let reachable, removed_var =
-    (* CR-someday mshinwell: Perhaps a more elegant way than this could be
-       found.  One possibility is that [simplify_projection] should try to
-       return a [Simple] rather than the original term, but that might be
-       unnecessary work, since the [Simple] will appear in subsequent places
-       by virtue of the typing anyway. *)
-    match reachable with
-    | Reachable _ ->
-      let typing_env =
-        TE.add_definition (DA.typing_env dacc)
-          (Name_in_binding_pos.var result_var)
-          K.value
-      in
-      let typing_env = TE.add_env_extension typing_env env_extension in
-      let name = Name.var (Var_in_binding_pos.var result_var) in
-      let ty = TE.find typing_env name (Some (K.value)) in
-      begin match T.get_alias_exn ty with
-      | exception Not_found -> reachable, false
-      | alias ->
-        match TE.get_canonical_simple_exn ~min_name_mode typing_env alias with
-        | exception Not_found -> reachable, false
-        | canonical ->
-          let reachable = Simplified_named.reachable (Named.create_simple canonical) in
-          reachable, true
-      end
-    | Invalid _ -> reachable, false
-  in
-  let dacc =
-    if removed_var then dacc
-    else DA.add_use_of_closure_var dacc closure_element
-  in
-  reachable, env_extension, dacc
+  let result_var' = Var_in_binding_pos.var result_var in
+  let typing_env = DA.typing_env dacc in
+  match
+    T.prove_project_var_simple typing_env ~min_name_mode
+      closure_ty closure_element
+  with
+  | Invalid ->
+    let ty = T.bottom K.value in
+    let env_extension = TEE.one_equation (Name.var result_var') ty in
+    Simplified_named.invalid (), env_extension, dacc
+  | Proved simple ->
+    let reachable = Simplified_named.reachable (Named.create_simple simple) in
+    let env_extension =
+      TEE.one_equation (Name.var result_var')
+        (T.alias_type_of K.value simple)
+    in
+    reachable, env_extension, dacc
+  | Unknown ->
+    let reachable, env_extension, dacc =
+      Simplify_common.simplify_projection
+        dacc ~original_term ~deconstructing:closure_ty
+        ~shape:(T.closure_with_at_least_this_closure_var
+                  ~this_closure:closure_id
+                  closure_element
+                  ~closure_element_var:(Var_in_binding_pos.var result_var))
+        ~result_var ~result_kind:K.value
+    in
+    reachable, env_extension, DA.add_use_of_closure_var dacc closure_element
 
 let simplify_unbox_number (boxable_number_kind : K.Boxable_number.t)
       dacc ~original_term ~arg ~arg_ty:boxed_number_ty ~result_var =
@@ -406,6 +393,29 @@ let simplify_boolean_not dacc ~original_term ~arg:_ ~arg_ty ~result_var =
     Simplified_named.reachable original_term, env_extension, dacc
   | Invalid -> result_invalid ()
 
+let simplify_reinterpret_int64_as_float dacc ~original_term ~arg:_ ~arg_ty
+    ~result_var =
+  let result = Name.var (Var_in_binding_pos.var result_var) in
+  let typing_env = DE.typing_env (DA.denv dacc) in
+  let proof = T.prove_naked_int64s typing_env arg_ty in
+  match proof with
+  | Proved int64s ->
+    let floats =
+      Int64.Set.fold (fun int64 floats ->
+          Float.Set.add (Float.of_bits int64) floats)
+        int64s
+        Float.Set.empty
+    in
+    let ty = T.these_naked_floats floats in
+    let env_extension = TEE.one_equation result ty in
+    Simplified_named.reachable original_term, env_extension, dacc
+  | Unknown ->
+    let env_extension = TEE.one_equation result (T.any_naked_float ()) in
+    Simplified_named.reachable original_term, env_extension, dacc
+  | Invalid ->
+    let env_extension = TEE.one_equation result (T.bottom K.naked_float) in
+    Simplified_named.invalid (), env_extension, dacc
+
 let simplify_float_arith_op (op : P.unary_float_arith_op) dacc ~original_term
       ~arg:_ ~arg_ty ~result_var =
   let module F = Numbers.Float_by_bit_pattern in
@@ -440,83 +450,61 @@ let simplify_float_arith_op (op : P.unary_float_arith_op) dacc ~original_term
   | Proved _ | Unknown -> result_unknown ()
   | Invalid -> result_invalid ()
 
-let try_cse dacc prim arg ~min_name_mode ~result_var : Simplify_common.cse =
-  let result_kind = P.result_kind_of_unary_primitive' prim in
-  if Name_mode.is_phantom min_name_mode then
-    Not_applied dacc
-  else
-    match S.simplify_simple dacc arg ~min_name_mode with
-    | Bottom, _arg_ty -> Invalid (T.bottom result_kind)
-    | Ok arg, _arg_ty ->
-      let original_prim : P.t = Unary (prim, arg) in
-      Simplify_common.try_cse dacc ~original_prim ~result_kind
-        ~args:[arg] ~min_name_mode ~result_var
-
 let simplify_unary_primitive dacc (prim : P.unary_primitive)
-      arg dbg ~result_var =
+      ~arg ~arg_ty dbg ~result_var =
   let min_name_mode = Var_in_binding_pos.name_mode result_var in
   let result_var' = Var_in_binding_pos.var result_var in
-  let invalid ty =
-    let env_extension = TEE.one_equation (Name.var result_var') ty in
-    Simplified_named.invalid (), env_extension, [arg], dacc
+  let original_prim : P.t = Unary (prim, arg) in
+  let original_term = Named.create_prim original_prim dbg in
+  let simplifier =
+    match prim with
+    | Project_var { project_from; var; } ->
+      simplify_project_var project_from var ~min_name_mode
+    | Select_closure { move_from; move_to; } ->
+      simplify_select_closure ~move_from ~move_to
+    | Unbox_number boxable_number_kind ->
+      simplify_unbox_number boxable_number_kind
+    | Box_number boxable_number_kind ->
+      simplify_box_number boxable_number_kind
+    | Is_int -> simplify_is_int
+    | Get_tag -> simplify_get_tag
+    | Array_length _ -> simplify_array_length
+    | String_length _ -> simplify_string_length
+    | Int_arith (kind, op) ->
+      begin match kind with
+      | Tagged_immediate -> Unary_int_arith_tagged_immediate.simplify op
+      | Naked_immediate -> Unary_int_arith_naked_immediate.simplify op
+      | Naked_int32 -> Unary_int_arith_naked_int32.simplify op
+      | Naked_int64 -> Unary_int_arith_naked_int64.simplify op
+      | Naked_nativeint -> Unary_int_arith_naked_nativeint.simplify op
+      end
+    | Float_arith op -> simplify_float_arith_op op
+    | Num_conv { src; dst; } ->
+      begin match src with
+      | Tagged_immediate -> Simplify_int_conv_tagged_immediate.simplify ~dst
+      | Naked_immediate -> Simplify_int_conv_naked_immediate.simplify ~dst
+      | Naked_float -> Simplify_int_conv_naked_float.simplify ~dst
+      | Naked_int32 -> Simplify_int_conv_naked_int32.simplify ~dst
+      | Naked_int64 -> Simplify_int_conv_naked_int64.simplify ~dst
+      | Naked_nativeint -> Simplify_int_conv_naked_nativeint.simplify ~dst
+      end
+    | Boolean_not -> simplify_boolean_not
+    | Reinterpret_int64_as_float -> simplify_reinterpret_int64_as_float
+    | Int_as_pointer
+    | Bigarray_length _
+    | Duplicate_array _
+    | Duplicate_block _
+    | Opaque_identity ->
+      (* CR mshinwell: In these cases, the type of the argument should
+         still be checked.  Same for binary/ternary/etc. *)
+      fun dacc ~original_term:_ ~arg ~arg_ty:_ ~result_var:_ ->
+        let prim : P.t = Unary (prim, arg) in
+        let named = Named.create_prim prim dbg in
+        let ty = T.unknown (P.result_kind' prim) in
+        let env_extension = TEE.one_equation (Name.var result_var') ty in
+        Simplified_named.reachable named, env_extension, dacc
   in
-  match try_cse dacc prim arg ~min_name_mode ~result_var:result_var' with
-  | Invalid ty -> invalid ty
-  | Applied result -> result
-  | Not_applied dacc ->
-    let result_kind = P.result_kind_of_unary_primitive' prim in
-    match S.simplify_simple dacc arg ~min_name_mode with
-    | Bottom, _arg_ty -> invalid (T.bottom result_kind)
-    | Ok arg, arg_ty ->
-      let original_prim : P.t = Unary (prim, arg) in
-      let original_term = Named.create_prim original_prim dbg in
-      let simplifier =
-        match prim with
-        | Project_var { project_from; var; } ->
-          simplify_project_var project_from var ~min_name_mode
-        | Select_closure { move_from; move_to; } ->
-          simplify_select_closure ~move_from ~move_to
-        | Unbox_number boxable_number_kind ->
-          simplify_unbox_number boxable_number_kind
-        | Box_number boxable_number_kind ->
-          simplify_box_number boxable_number_kind
-        | Is_int -> simplify_is_int
-        | Get_tag -> simplify_get_tag
-        | Array_length _ -> simplify_array_length
-        | String_length _ -> simplify_string_length
-        | Int_arith (kind, op) ->
-          begin match kind with
-          | Tagged_immediate -> Unary_int_arith_tagged_immediate.simplify op
-          | Naked_immediate -> Unary_int_arith_naked_immediate.simplify op
-          | Naked_int32 -> Unary_int_arith_naked_int32.simplify op
-          | Naked_int64 -> Unary_int_arith_naked_int64.simplify op
-          | Naked_nativeint -> Unary_int_arith_naked_nativeint.simplify op
-          end
-        | Float_arith op -> simplify_float_arith_op op
-        | Num_conv { src; dst; } ->
-          begin match src with
-          | Tagged_immediate -> Simplify_int_conv_tagged_immediate.simplify ~dst
-          | Naked_immediate -> Simplify_int_conv_naked_immediate.simplify ~dst
-          | Naked_float -> Simplify_int_conv_naked_float.simplify ~dst
-          | Naked_int32 -> Simplify_int_conv_naked_int32.simplify ~dst
-          | Naked_int64 -> Simplify_int_conv_naked_int64.simplify ~dst
-          | Naked_nativeint -> Simplify_int_conv_naked_nativeint.simplify ~dst
-          end
-        | Boolean_not -> simplify_boolean_not
-        | Int_as_pointer
-        | Bigarray_length _
-        | Duplicate_array _
-        | Duplicate_block _
-        | Opaque_identity ->
-          (* CR mshinwell: In these cases, the type of the argument should
-             still be checked.  Same for binary/ternary/etc. *)
-          fun dacc ~original_term:_ ~arg ~arg_ty:_ ~result_var:_ ->
-            let named = Named.create_prim (Unary (prim, arg)) dbg in
-            let ty = T.unknown result_kind in
-            let env_extension = TEE.one_equation (Name.var result_var') ty in
-            Simplified_named.reachable named, env_extension, dacc
-      in
-      let reachable, env_extension, dacc =
-        simplifier dacc ~original_term ~arg ~arg_ty ~result_var
-      in
-      reachable, env_extension, [arg], dacc
+  let reachable, env_extension, dacc =
+    simplifier dacc ~original_term ~arg ~arg_ty ~result_var
+  in
+  reachable, env_extension, [arg], dacc

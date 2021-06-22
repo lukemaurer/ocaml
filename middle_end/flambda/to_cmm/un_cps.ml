@@ -29,9 +29,6 @@ module R = Un_cps_result
      on 32-bits integers that may have a result outside of the range.
 *)
 
-(* TODO: remove all uses of this, ^^ *)
-let todo () = failwith "Not yet implemented"
-
 (* Cmm helpers *)
 module C = struct
   include Cmm_helpers
@@ -91,10 +88,11 @@ let default_of_kind (k : Flambda_kind.t) =
   | Naked_number Naked_immediate -> C.int 0
   | Naked_number Naked_float -> C.float 0.
   | Naked_number Naked_int32 -> C.int 0
-  | Naked_number Naked_int64 when C.arch32 -> todo ()
+  | Naked_number Naked_int64 when C.arch32 -> C.unsupported_32_bits ()
   | Naked_number Naked_int64 -> C.int 0
   | Naked_number Naked_nativeint -> C.int 0
   | Fabricated -> Misc.fatal_error "Fabricated_kind have no default value"
+  | Rec_info -> Misc.fatal_error "Rec_info has no default value"
 
 (* Function symbol *)
 
@@ -106,15 +104,15 @@ let function_name simple =
   Simple.pattern_match simple
     ~name:(fun name ->
       Name.pattern_match name
-        ~var:(fun _ -> fail simple)
-        ~symbol:(fun sym -> symbol sym))
+        ~var:(fun _ ~coercion:_ -> fail simple)
+        ~symbol:(fun sym ~coercion:_ -> symbol sym))
     ~const:(fun _ -> fail simple)
 
 (* 'Simple' expression *)
 
 let simple env s =
   Simple.pattern_match s
-    ~name:(fun n -> name env n)
+    ~name:(fun n ~coercion:_ -> name env n)
     ~const:(fun c -> const env c, env, Ece.pure)
 
 (* Arithmetic primitives *)
@@ -139,7 +137,7 @@ let unary_int_arith_primitive _env dbg kind op arg =
   | Naked_immediate, Swap_byte_endianness -> C.bswap16 arg dbg
   (* Special case for manipulating int64 on 32-bit hosts *)
   | Naked_int64, Neg when C.arch32 ->
-    C.extcall ~alloc:false ~returns:true "caml_int64_neg_native" typ_int64 [arg]
+    C.unsupported_32_bits ()
   (* General case (including byte swap for 64-bit on 32-bit archi) *)
   | _, Neg -> C.sub_int (C.int 0) arg dbg
   | _, Swap_byte_endianness ->
@@ -155,26 +153,15 @@ let arithmetic_conversion dbg src dst arg =
   let open Flambda_kind.Standard_int_or_float in
   match src, dst with
   (* 64-bit on 32-bit host specific cases *)
-  | Naked_int64, Tagged_immediate when C.arch32 ->
-    None, C.extcall ~alloc:false ~returns:true "caml_int64_to_int" typ_int [arg]
-  | Naked_int64, Naked_int32 when C.arch32 ->
-    None, C.extcall ~alloc:false ~returns:true "caml_int64_to_int32" typ_int [arg]
-  | Naked_int64, (Naked_nativeint | Naked_immediate) when C.arch32 ->
-    None, C.extcall ~alloc:false ~returns:true "caml_int64_to_nativeint" typ_int [arg]
-  | Naked_int64, Naked_float when C.arch32 ->
-    None, C.extcall ~alloc:false ~returns:true "caml_int64_to_float_unboxed" typ_float [arg]
-  | Tagged_immediate, Naked_int64 when C.arch32 ->
-    None, C.extcall ~alloc:true ~returns:true "caml_int64_of_int" typ_val [arg]
-          |> C.unbox_number ~dbg Flambda_kind.Boxable_number.Naked_int64
-  | Naked_int32, Naked_int64 when C.arch32 ->
-    None, C.extcall ~alloc:true ~returns:true "caml_int64_of_int32" typ_val [arg]
-          |> C.unbox_number ~dbg Flambda_kind.Boxable_number.Naked_int64
-  | (Naked_nativeint | Naked_immediate), Naked_int64 when C.arch32 ->
-    None, C.extcall ~alloc:true ~returns:true "caml_int64_of_nativeint" typ_val [arg]
-          |> C.unbox_number ~dbg Flambda_kind.Boxable_number.Naked_int64
+  | Naked_int64, Tagged_immediate
+  | Naked_int64, Naked_int32
+  | Naked_int64, (Naked_nativeint | Naked_immediate)
+  | Naked_int64, Naked_float
+  | Tagged_immediate, Naked_int64
+  | Naked_int32, Naked_int64
+  | (Naked_nativeint | Naked_immediate), Naked_int64
   | Naked_float, Naked_int64 when C.arch32 ->
-    None, C.extcall ~alloc:true ~returns:true "caml_int64_of_float_unboxed" typ_val [arg]
-          |> C.unbox_number ~dbg Flambda_kind.Boxable_number.Naked_int64
+    C.unsupported_32_bits ()
   (* Identity on floats *)
   | Naked_float, Naked_float -> None, arg
   (* Conversions to and from tagged ints  *)
@@ -213,16 +200,9 @@ let binary_phys_comparison _env dbg kind op x y =
   match (kind : Flambda_kind.t),
         (op : Flambda_primitive.equality_comparison) with
   (* int64 special case *)
-  | Naked_number Naked_int64, Eq when C.arch32 ->
-    C.untag_int
-      (C.extcall ~alloc:true ~returns:true "caml_equal" typ_int
-         [C.box_int64 ~dbg x; C.box_int64 ~dbg y])
-      dbg
+  | Naked_number Naked_int64, Eq
   | Naked_number Naked_int64, Neq when C.arch32 ->
-    C.untag_int
-      (C.extcall ~alloc:true ~returns:true "caml_notequal" typ_int
-         [C.box_int64 ~dbg x; C.box_int64 ~dbg y])
-      dbg
+    C.unsupported_32_bits ()
   (* General case *)
   | _, Eq -> C.eq ~dbg x y
   | _, Neq -> C.neq ~dbg x y
@@ -231,22 +211,15 @@ let binary_int_arith_primitive _env dbg kind op x y =
   match (kind : Flambda_kind.Standard_int.t),
         (op : Flambda_primitive.binary_int_arith_op) with
   (* Int64 bits ints on 32-bit archs *)
-  | Naked_int64, Add when C.arch32 ->
-    C.extcall ~alloc:false ~returns:true "caml_int64_add_native" typ_int64 [x; y]
-  | Naked_int64, Sub when C.arch32 ->
-    C.extcall ~alloc:false ~returns:true "caml_int64_sub_native" typ_int64 [x; y]
-  | Naked_int64, Mul when C.arch32 ->
-    C.extcall ~alloc:false ~returns:true "caml_int64_mul_native" typ_int64 [x; y]
-  | Naked_int64, Div when C.arch32 ->
-    C.extcall ~alloc:true ~returns:true "caml_int64_div_native" typ_int64 [x; y]
-  | Naked_int64, Mod when C.arch32 ->
-    C.extcall ~alloc:true ~returns:true "caml_int64_mod_native" typ_int64 [x; y]
-  | Naked_int64, And when C.arch32 ->
-    C.extcall ~alloc:false ~returns:true "caml_int64_and_native" typ_int64 [x; y]
-  | Naked_int64, Or when C.arch32 ->
-    C.extcall ~alloc:false ~returns:true "caml_int64_or_native" typ_int64 [x; y]
+  | Naked_int64, Add
+  | Naked_int64, Sub
+  | Naked_int64, Mul
+  | Naked_int64, Div
+  | Naked_int64, Mod
+  | Naked_int64, And
+  | Naked_int64, Or
   | Naked_int64, Xor when C.arch32 ->
-    C.extcall ~alloc:false ~returns:true "caml_int64_xor_native" typ_int64 [x; y]
+    C.unsupported_32_bits ()
   (* Tagged integers *)
   | Tagged_immediate, Add -> C.add_int_caml x y dbg
   | Tagged_immediate, Sub -> C.sub_int_caml x y dbg
@@ -302,11 +275,11 @@ let binary_int_shift_primitive _env dbg kind op x y =
         (op : Flambda_primitive.int_shift_op) with
   (* Int64 special case *)
   | Naked_int64, Lsl when C.arch32 ->
-    todo() (* caml primitives for these have no native/unboxed version *)
+    C.unsupported_32_bits () (* caml primitives for these have no native/unboxed version *)
   | Naked_int64, Lsr when C.arch32 ->
-    todo() (* caml primitives for these have no native/unboxed version *)
+    C.unsupported_32_bits () (* caml primitives for these have no native/unboxed version *)
   | Naked_int64, Asr when C.arch32 ->
-    todo() (* caml primitives for these have no native/unboxed version *)
+    C.unsupported_32_bits () (* caml primitives for these have no native/unboxed version *)
   (* Tagged integers *)
   | Tagged_immediate, Lsl -> C.lsl_int_caml_raw ~dbg x y
   | Tagged_immediate, Lsr -> C.lsr_int_caml_raw ~dbg x y
@@ -333,20 +306,12 @@ let binary_int_comp_primitive _env dbg kind signed cmp x y =
         (signed : Flambda_primitive.signed_or_unsigned),
         (cmp : Flambda_primitive.ordered_comparison) with
   (* XXX arch32 cases need [untag_int] now. *)
-  | Naked_int64, Signed, Lt when C.arch32 ->
-    C.extcall ~alloc:true ~returns:true "caml_lessthan" typ_int
-      [C.box_int64 ~dbg x; C.box_int64 ~dbg y]
-  | Naked_int64, Signed, Le when C.arch32 ->
-    C.extcall ~alloc:true ~returns:true "caml_lessequal" typ_int
-      [C.box_int64 ~dbg x; C.box_int64 ~dbg y]
-  | Naked_int64, Signed, Gt when C.arch32 ->
-    C.extcall ~alloc:true ~returns:true "caml_greaterthan" typ_int
-      [C.box_int64 ~dbg x; C.box_int64 ~dbg y]
-  | Naked_int64, Signed, Ge when C.arch32 ->
-    C.extcall ~alloc:true ~returns:true "caml_greaterequal" typ_int
-      [C.box_int64 ~dbg x; C.box_int64 ~dbg y]
+  | Naked_int64, Signed, Lt
+  | Naked_int64, Signed, Le
+  | Naked_int64, Signed, Gt
+  | Naked_int64, Signed, Ge
   | Naked_int64, Unsigned, (Lt | Le | Gt | Ge) when C.arch32 ->
-    todo() (* There are no runtime C functions to do that afaict *)
+    C.unsupported_32_bits () (* There are no runtime C functions to do that afaict *)
   (* Tagged integers *)
   (* When comparing tagged integers, there is always one number for which
      the last bit is irrelevant.
@@ -414,9 +379,9 @@ let binary_float_comp_primitive_yielding_int _env dbg x y =
 let unary_primitive env dbg f arg =
   match (f : Flambda_primitive.unary_primitive) with
   | Duplicate_array _ ->
-    None, C.extcall ~alloc:true ~returns:true "caml_obj_dup" typ_val [arg]
+    None, C.extcall ~alloc:true ~returns:true ~ty_args:[] "caml_obj_dup" typ_val [arg]
   | Duplicate_block _ ->
-    None, C.extcall ~alloc:true ~returns:true "caml_obj_dup" typ_val [arg]
+    None, C.extcall ~alloc:true ~returns:true ~ty_args:[] "caml_obj_dup" typ_val [arg]
   | Is_int ->
     None, C.and_ ~dbg arg (C.int ~dbg 1)
   | Get_tag ->
@@ -440,6 +405,16 @@ let unary_primitive env dbg f arg =
     arithmetic_conversion dbg src dst arg
   | Boolean_not ->
     None, C.mk_not dbg arg
+  | Reinterpret_int64_as_float ->
+    (* CR-someday mshinwell: We should add support for this operation in
+       the backend.  It isn't the identity as there may need to be a move
+       between different register kinds (e.g. integer to XMM registers
+       on x86-64). *)
+    None, C.extcall ~alloc:false ~returns:true
+      ~ty_args:[C.exttype_of_kind Flambda_kind.naked_int64]
+      "caml_int64_float_of_bits_unboxed"
+      typ_float
+      [arg]
   | Unbox_number kind ->
     let extra =
       match kind with
@@ -524,6 +499,8 @@ let arg_list env l =
    given to [Env.inline_variable]. *)
 let prim env dbg p =
   match (p : Flambda_primitive.t) with
+  | Nullary Optimised_out _ ->
+    Misc.fatal_errorf "TODO: phantom let-bindings in un_cps"
   | Unary (f, x) ->
     let x, env, eff = simple env x in
     let extra, res = unary_primitive env dbg f x in
@@ -558,7 +535,7 @@ let machtype_of_kind k =
   | Naked_number Naked_int64 -> typ_int64
   | Naked_number (Naked_immediate | Naked_int32 | Naked_nativeint) ->
     typ_int
-  | Fabricated -> assert false
+  | Fabricated | Rec_info -> assert false
 
 let machtype_of_kinded_parameter p =
   Kinded_parameter.kind p
@@ -713,18 +690,27 @@ and let_expr env res t =
             ~num_normal_occurrences_of_bound_vars soc
         | Symbols { bound_symbols; scoping_rule; }, Static_consts consts ->
           let_symbol env res bound_symbols scoping_rule consts body
+        | Depth _, Rec_info _ ->
+          (* Erase *)
+          expr env res body
         (* Error cases *)
-        | Singleton _, (Set_of_closures _ | Static_consts _) ->
+        | Singleton _, (Set_of_closures _ | Static_consts _ | Rec_info _) ->
           Misc.fatal_errorf
-            "Singleton binding to a set of closure or static const if forbidden:@ %a"
+            "Singleton binding neither a simple expression nor a primitive \
+             application:@ %a"
             Let.print t
-        | Set_of_closures _, (Simple _ | Prim _ | Static_consts _) ->
+        | Set_of_closures _,
+          (Simple _ | Prim _ | Static_consts _ | Rec_info _) ->
           Misc.fatal_errorf
             "Set_of_closures binding a non-Set_of_closures:@ %a"
             Let.print t
-        | Symbols _, (Simple _ | Prim _ | Set_of_closures _) ->
+        | Symbols _, (Simple _ | Prim _ | Set_of_closures _ | Rec_info _) ->
           Misc.fatal_errorf
             "Symbols binding a non-Static const:@ %a"
+            Let.print t
+        | Depth _, (Simple _ | Prim _ | Set_of_closures _ | Static_consts _) ->
+          Misc.fatal_errorf
+            "Depth variable binding a non-Rec_info:@ %a"
             Let.print t
         end
       end)
@@ -833,10 +819,10 @@ and let_cont_inline env res k h body =
    within each expression. *)
 and let_cont_jump env res k h body =
   let wrap, env = Env.flush_delayed_lets env in
-  let vars, handle, res = continuation_handler env res h in
+  let vars, arity, handle, res = continuation_handler env res h in
   let id, env = Env.add_jump_cont env (List.map snd vars) k in
   if Continuation_handler.is_exn_handler h then begin
-    let body, res = let_cont_exn env res k h body vars handle id in
+    let body, res = let_cont_exn env res k body vars handle id arity in
     wrap body, res
   end else begin
     let body, res = expr env res body in
@@ -851,16 +837,16 @@ and let_cont_jump env res k h body =
    are passed through the trywith using mutable cmm variables. Thus the
    exn handler must first read the contents of thos extra args (eagerly
    in order to minmize the lifetime of the mutable variables) *)
-and let_cont_exn env res k h body vars handle id =
+and let_cont_exn env res k body vars handle id arity =
   let exn_var, extra_params = split_exn_cont_args k vars in
-  let env_body, extra_vars = Env.add_exn_handler env k h in
+  let env_body, extra_vars = Env.add_exn_handler env k arity in
   let handler = exn_handler handle extra_vars extra_params in
   let body, res = expr env_body res body in
   let trywith =
     C.trywith
       ~dbg:Debuginfo.none
       ~kind:(Delayed id)
-      ~body ~exn_var ~handler
+      ~body ~exn_var ~handler ()
   in
   wrap_let_cont_exn_body trywith extra_vars, res
 
@@ -889,7 +875,7 @@ and let_cont_rec env res conts body =
   ) map env in
   (* Translate each continuation handler *)
   let map, res = Continuation.Map.fold (fun k h (map, res) ->
-    let vars, handler, res = continuation_handler env res h in
+    let vars, _arity, handler, res = continuation_handler env res h in
     Continuation.Map.add k (vars, handler) map, res
   ) map (Continuation.Map.empty, res) in
   (* Setup the cmm handlers for the static catch *)
@@ -911,9 +897,10 @@ and continuation_arg_tys h =
 
 and continuation_handler env res h =
   let args, _, handler = continuation_handler_split h in
+  let arity = Kinded_parameter.List.arity args in
   let env, vars = var_list env args in
   let e, res = expr env res handler in
-  vars, e, res
+  vars, arity, e, res
 
 (* Function calls: besides the function calls, there are a few things to do:
    - setup the mutable variables for the exn cont extra args if needed
@@ -980,7 +967,7 @@ and apply_call env e =
       in
       C.indirect_full_call ~dbg ty f args, env, effs
     end
-  | Call_kind.C_call { alloc; return_arity; _ } ->
+  | Call_kind.C_call { alloc; return_arity; param_arity; _ } ->
     let f = function_name f in
     (* CR vlaviron: temporary hack to recover the right symbol *)
     let len = String.length f in
@@ -991,7 +978,8 @@ and apply_call env e =
     let args, env, _ = arg_list env args in
     let ty = machtype_of_return_arity return_arity in
     let wrap = wrap_extcall_result return_arity in
-    wrap dbg (C.extcall ~dbg ~alloc ~returns f ty args), env, effs
+    let ty_args = List.map C.exttype_of_kind param_arity in
+    wrap dbg (C.extcall ~dbg ~alloc ~returns ~ty_args f ty args), env, effs
   | Call_kind.Method { kind; obj; } ->
     let obj, env, _ = simple env obj in
     let meth, env, _ = simple env f in
@@ -1069,7 +1057,7 @@ and wrap_cont env res effs call e =
 and apply_cont env res e =
   let k = Apply_cont_expr.continuation e in
   let args = Apply_cont_expr.args e in
-  if Continuation.is_exn k then
+  if Env.is_exn_handler env k then
     apply_cont_exn env res e k args
   else if Continuation.equal (Env.return_cont env) k then
     apply_cont_ret env res e k args
@@ -1221,10 +1209,10 @@ and switch env res s =
 and match_var_with_extra_info env simple : Env.extra_info option =
   Simple.pattern_match simple
     ~const:(fun _ -> None)
-    ~name:(fun n ->
+    ~name:(fun n ~coercion:_ ->
       Name.pattern_match n
         ~symbol:(fun _ -> None)
-        ~var:(Env.extra_info env)
+        ~var:(fun var -> Env.extra_info env var)
     )
 
 (* Small function to estimate the number of arithmetic instructions
@@ -1359,7 +1347,9 @@ and let_dynamic_set_of_closures env res body closure_vars
     Effects.Only_generative_effects Immutable, Coeffects.No_coeffects
   in
   let decl_map = decls |> Closure_id.Lmap.bindings |> Closure_id.Map.of_list in
-  let l, env, effs = fill_layout decl_map elts env effs [] 0 layout.slots in
+  let l, env, effs =
+    fill_layout decl_map layout.startenv elts env effs [] 0 layout.slots
+  in
   let csoc = C.make_closure_block l in
   (* Create a variable to hold the set of closure *)
   let soc_var = Variable.create "*set_of_closures*" in
@@ -1386,15 +1376,15 @@ and get_closure_by_offset env set_cmm cid =
   | None ->
     Misc.fatal_errorf "No closure offset for %a" Closure_id.print cid
 
-and fill_layout decls elts env effs acc i = function
+and fill_layout decls startenv elts env effs acc i = function
   | [] -> List.rev acc, env, effs
   | (j, slot) :: r ->
     let acc = fill_up_to j acc i in
-    let acc, offset, env, eff = fill_slot decls elts env acc j slot in
+    let acc, offset, env, eff = fill_slot decls startenv elts env acc j slot in
     let effs = Ece.join eff effs in
-    fill_layout decls elts env effs acc offset r
+    fill_layout decls startenv elts env effs acc offset r
 
-and fill_slot decls elts env acc offset slot =
+and fill_slot decls startenv elts env acc offset slot =
   match (slot : Un_cps_closure.layout_slot) with
   | Infix_header ->
     let field = C.alloc_infix_header (offset + 1) Debuginfo.none in
@@ -1410,10 +1400,11 @@ and fill_slot decls elts env acc offset slot =
     let code_symbol = Code_id.code_symbol code_id in
     let code_name = Linkage_name.to_string (Symbol.linkage_name code_symbol) in
     let arity = Env.get_func_decl_params_arity env decl in
+    let closure_info = C.closure_info ~arity ~startenv:(startenv - offset) in
     (* We build here the **reverse** list of fields for the closure *)
     if arity = 1 || arity = 0 then begin
       let acc =
-        C.int_const dbg arity ::
+        C.nativeint ~dbg closure_info ::
         C.symbol ~dbg code_name ::
         acc
       in
@@ -1421,7 +1412,7 @@ and fill_slot decls elts env acc offset slot =
     end else begin
       let acc =
         C.symbol ~dbg code_name ::
-        C.int_const dbg arity ::
+        C.nativeint ~dbg closure_info ::
         C.symbol ~dbg (C.curry_function_sym arity) ::
         acc
       in
@@ -1439,7 +1430,7 @@ and fill_up_to j acc i =
 and params_and_body env res fun_name p =
   Function_params_and_body.pattern_match p
     ~f:(fun ~return_continuation:k k_exn vars ~body ~my_closure
-          ~is_my_closure_used ->
+          ~is_my_closure_used ~my_depth:_ ->
       try
         let args = function_args vars my_closure ~is_my_closure_used in
         let k_exn = Exn_continuation.exn_handler k_exn in
@@ -1501,7 +1492,7 @@ let unit (middle_end_result : Flambda_middle_end.middle_end_result) =
        (Module initialisers return the unit value). *)
     let env =
       Env.mk offsets functions_info dummy_k
-        (Flambda_unit.exn_continuation unit)
+        ~exn_continuation:(Flambda_unit.exn_continuation unit)
         ~used_closure_vars
     in
     let _env, return_cont_params =

@@ -44,17 +44,20 @@ module Float_arg_helper : sig
 end
 
 type inlining_arguments = {
-  inline_call_cost : int option;
-  inline_alloc_cost : int option;
-  inline_prim_cost : int option;
-  inline_branch_cost : int option;
-  inline_indirect_cost : int option;
+  inline_call_cost : float option;
+  inline_alloc_cost : float option;
+  inline_prim_cost : float option;
+  inline_branch_cost : float option;
+  inline_indirect_call_cost : float option;
+  inline_poly_compare_cost : float option;
   inline_lifting_benefit : int option;
   inline_branch_factor : float option;
   inline_max_depth : int option;
   inline_max_unroll : int option;
   inline_threshold : float option;
   inline_toplevel_threshold : int option;
+  inline_small_function_size : int option;
+  inline_large_function_size : int option;
 }
 
 val classic_arguments : inlining_arguments
@@ -132,8 +135,6 @@ val dump_lambda : bool ref
 val dump_rawclambda : bool ref
 val dump_clambda : bool ref
 val dump_rawflambda : bool ref
-val dump_prepared_lambda : bool ref
-val dump_ilambda : bool ref
 val dump_flambda : bool ref
 val dump_rawfexpr : bool ref
 val dump_fexpr : bool ref
@@ -164,6 +165,7 @@ val native_code : bool ref
 val default_inline_threshold : float
 val inline_threshold : Float_arg_helper.parsed ref
 val inlining_report : bool ref
+val inlining_report_bin : bool ref
 val simplify_rounds : int option ref
 val default_simplify_rounds : int ref
 val rounds : unit -> int
@@ -171,18 +173,24 @@ val default_inline_max_unroll : int
 val inline_max_unroll : Int_arg_helper.parsed ref
 val default_inline_toplevel_threshold : int
 val inline_toplevel_threshold : Int_arg_helper.parsed ref
-val default_inline_call_cost : int
-val default_inline_alloc_cost : int
-val default_inline_prim_cost : int
-val default_inline_branch_cost : int
-val default_inline_indirect_cost : int
+val default_inline_call_cost : float
+val default_inline_alloc_cost : float
+val default_inline_prim_cost : float
+val default_inline_branch_cost : float
+val default_inline_indirect_call_cost : float
+val default_inline_poly_compare_cost : float
 val default_inline_lifting_benefit : int
-val inline_call_cost : Int_arg_helper.parsed ref
-val inline_alloc_cost : Int_arg_helper.parsed ref
-val inline_prim_cost : Int_arg_helper.parsed ref
-val inline_branch_cost : Int_arg_helper.parsed ref
-val inline_indirect_cost : Int_arg_helper.parsed ref
+val default_inline_small_function_size : int
+val default_inline_large_function_size : int
+val inline_call_cost : Float_arg_helper.parsed ref
+val inline_alloc_cost : Float_arg_helper.parsed ref
+val inline_prim_cost : Float_arg_helper.parsed ref
+val inline_branch_cost : Float_arg_helper.parsed ref
+val inline_indirect_call_cost : Float_arg_helper.parsed ref
+val inline_poly_compare_cost : Float_arg_helper.parsed ref
 val inline_lifting_benefit : Int_arg_helper.parsed ref
+val inline_small_function_size : Int_arg_helper.parsed ref
+val inline_large_function_size : Int_arg_helper.parsed ref
 val default_inline_branch_factor : float
 val inline_branch_factor : Float_arg_helper.parsed ref
 val dont_write_files : bool ref
@@ -256,8 +264,8 @@ module Flambda : sig
     val fallback_inlining_heuristic : bool ref
     val inline_effects_in_cmm : bool ref
     val phantom_lets : bool ref
-    val max_inlining_depth : int ref
     val max_block_size_for_projections : int option ref
+    val max_unboxing_depth : int ref
   end
 
   module Debug : sig
@@ -272,14 +280,20 @@ module Flambda : sig
 end
 
 module Compiler_pass : sig
-  type t = Parsing | Typing | Scheduling
+  type t = Parsing | Typing | Scheduling | Emit
   val of_string : string -> t option
   val to_string : t -> string
   val is_compilation_pass : t -> bool
-  val available_pass_names : native:bool -> string list
+  val available_pass_names : filter:(t -> bool) -> native:bool -> string list
+  val can_save_ir_after : t -> bool
+  val compare : t -> t -> int
+  val to_output_filename: t -> prefix:string -> string
+  val of_input_filename: string -> t option
 end
 val stop_after : Compiler_pass.t option ref
 val should_stop_after : Compiler_pass.t -> bool
+val set_save_ir_after : Compiler_pass.t -> bool -> unit
+val should_save_ir_after : Compiler_pass.t -> bool
 
 val arg_spec : (string * Arg.spec * string) list ref
 
