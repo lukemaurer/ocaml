@@ -926,7 +926,7 @@ module Tables = struct
           inline;
           inlining_state;
           arities;
-    } )
+     } )
 # 931 "flambda_parser_in.ml"
          in
         {
@@ -2384,7 +2384,7 @@ module Tables = struct
         let _endpos = _endpos_noalloc_ in
         let _v : 'tv_call_kind = 
 # 669 "flambda_parser.mly"
-  ( C_call { alloc = not noalloc } )
+    ( C_call { alloc = not noalloc } )
 # 2389 "flambda_parser_in.ml"
          in
         {
@@ -5577,7 +5577,7 @@ module Tables = struct
         let _endpos = _endpos_defining_expr_ in
         let _v : 'tv_let_binding = 
 # 624 "flambda_parser.mly"
-      ( { var; defining_expr } )
+    ( { var; defining_expr } )
 # 5582 "flambda_parser_in.ml"
          in
         {
