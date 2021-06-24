@@ -32,8 +32,7 @@ UTILS=utils/config.cmo utils/build_path_prefix_map.cmo utils/misc.cmo \
 	utils/consistbl.cmo utils/strongly_connected_components.cmo \
         utils/one_bit_fewer.cmo \
 	utils/targetint.cmo utils/int_replace_polymorphic_compare.cmo \
-	utils/domainstate.cmo utils/binutils.cmo utils/printing_cache.cmo \
-        utils/lmap.cmo
+	utils/domainstate.cmo utils/binutils.cmo utils/printing_cache.cmo
 UTILS_CMI=
 
 PARSING=parsing/location.cmo parsing/longident.cmo \
@@ -71,12 +70,11 @@ TYPING_CMI=\
   typing/annot.cmi \
   typing/outcometree.cmi
 
-LAMBDA=lambda/tag.cmo lambda/debuginfo.cmo \
+LAMBDA=lambda/debuginfo.cmo \
   lambda/lambda.cmo lambda/printlambda.cmo \
   lambda/switch.cmo lambda/matching.cmo \
   lambda/translobj.cmo lambda/translattribute.cmo \
   lambda/translprim.cmo lambda/translcore.cmo \
-  lambda/dissect_letrec.cmo \
   lambda/translclass.cmo lambda/translmod.cmo \
   lambda/simplif.cmo lambda/runtimedef.cmo
 LAMBDA_CMI=
@@ -180,6 +178,8 @@ MIDDLE_END_CLOSURE=\
 MIDDLE_END_CLOSURE_CMI=
 
 MIDDLE_END_FLAMBDA_COMPILENV_DEPS=\
+  middle_end/flambda/compilenv_deps/lmap.cmo \
+  middle_end/flambda/compilenv_deps/tag.cmo \
   middle_end/flambda/compilenv_deps/table_by_int_id.cmo \
   middle_end/flambda/compilenv_deps/patricia_tree.cmo \
   middle_end/flambda/compilenv_deps/linkage_name.cmo \
@@ -368,6 +368,7 @@ MIDDLE_END_FLAMBDA_FROM_LAMBDA=\
   middle_end/flambda/from_lambda/lambda_to_flambda_primitives_helpers.cmo \
   middle_end/flambda/from_lambda/lambda_to_flambda_primitives.cmo \
   middle_end/flambda/from_lambda/closure_conversion.cmo \
+  middle_end/flambda/from_lambda/dissect_letrec.cmo \
   middle_end/flambda/from_lambda/lambda_to_flambda.cmo
 
 

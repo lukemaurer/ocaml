@@ -260,9 +260,31 @@ let rec prepare_letrec
        | Some current_let ->
            { letrec with consts = (current_let.ident, const) :: letrec.consts }
        | None -> dead_code lam letrec)
-  | Llet (Variable, _, _, _, _) ->
-      (* This is not supposed to appear at this point *)
-      assert false
+  | Llet (Variable, k, id, def, body) ->
+      let letrec = prepare_letrec recursive_set current_let body letrec in
+      (* Variable let comes from mutable values, and reading from it is
+         considered as inspections by Typecore.check_recursive_expression.
+         This means that either:
+         - the value does not depend on any recursive value,
+         - or it is not read in the let-rec
+      *)
+
+      (* TODO: binder dans une variable temporaire *)
+
+      let free_vars_def = Lambda.free_variables def in
+      if Ident.Set.disjoint free_vars_def recursive_set then
+        let pre ~tail : Lambda.lambda =
+          Llet (Variable, k, id, def, letrec.pre ~tail)
+        in
+        { letrec with pre }
+      else begin
+        let free_vars_body = Lambda.free_variables body in
+        (* This is infrequent enough for not caring
+           about performances *)
+        assert(not (Ident.Set.mem id free_vars_body));
+        (* It is not used, we only keep the effect *)
+        { letrec with effects = Lsequence (def, letrec.effects) }
+      end
   | Llet ((Strict | Alias | StrictOpt) as let_kind, value_kind, id, def, body)
     ->
       let letbound = Ident.Set.add id letrec.letbound in
@@ -573,20 +595,3 @@ let dissect_letrec ~bindings ~body =
     with Bug ->
       Misc.fatal_errorf "let-rec@.%a@."
         Printlambda.lambda (Lletrec (bindings, body))
-
-let preallocate_letrec ~bindings ~body =
-  let bindings = List.rev bindings in
-  let body_with_initialization =
-  List.fold_left
-    (fun body (id, def, _size) -> Lsequence (update_dummy id def, body))
-    body bindings
-  in
-  List.fold_left
-    (fun body (id, _def, size) ->
-       let desc =
-         Primitive.simple ~name:"caml_alloc_dummy" ~arity:1 ~alloc:true
-       in
-       let size : lambda = Lconst (Const_base (Const_int size)) in
-       Llet (Strict, Pgenval, id,
-             Lprim (Pccall desc, [size], Loc_unknown), body))
-    body_with_initialization bindings
