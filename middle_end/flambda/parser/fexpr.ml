@@ -104,6 +104,7 @@ type kind_with_subkind = (* can't alias for same reason as [kind] *)
   | Boxed_int64
   | Boxed_nativeint
   | Tagged_immediate
+  | Rec_info
 
 type static_data_binding = {
   symbol : symbol;
@@ -304,6 +305,11 @@ type inline_attribute = Inline_attribute.t =
   | Unroll of int
   | Default_inline
 
+type inlining_state = {
+  depth : int;
+  (* CR lmaurer: Add inlining arguments *)
+}
+
 type apply = {
     func : name;
     continuation : result_continuation;
@@ -312,9 +318,7 @@ type apply = {
     call_kind : call_kind;
     arities : function_arities option;
     inline : inline_attribute option;
-    (* CR lmaurer: This should should be a separate inlining_state type here
-     * so that we're not coupled to Inlining_state.print's syntax *)
-    inlining_state : Inlining_state.t option;
+    inlining_state : inlining_state option;
   }
 
 type size = int

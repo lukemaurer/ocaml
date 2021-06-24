@@ -156,11 +156,12 @@ let kind_with_subkind ppf (k : kind_with_subkind) =
     | Boxed_int64 -> "int64 boxed"
     | Boxed_nativeint -> "nativeint boxed"
     | Tagged_immediate -> "imm tagged"
+    | Rec_info -> "rec_info"
 
 let arity ppf (a : arity) =
   match a with
   | [] -> Format.pp_print_string ppf "unit"
-  | _ -> pp_star_list kind_with_subkind ppf a
+  | _ -> Format.fprintf ppf "@[<hv>%a@]" (pp_star_list kind_with_subkind) a
 
 let kinded_variable ppf (v, (k:kind_with_subkind option)) =
   match k with
@@ -590,12 +591,11 @@ let inline_attribute ~space ppf (i : Inline_attribute.t) =
 let inline_attribute_opt ~space ppf i =
   pp_option ~space (inline_attribute ~space:Neither) ppf i
 
-let inlining_state ppf is =
-  (* CR lmaurer: Separate Inlining_state.t from our AST types *)
-  Inlining_state.print ppf is
+let inlining_state ppf { depth } =
+  Format.fprintf ppf "depth(%d)" depth
 
-let code_size ~space ppf code_size =
-  pp_spaced ~space ppf "%d" code_size
+let code_size ppf code_size =
+  Format.fprintf ppf "%d" code_size
 
 let or_blank f ppf ob =
   match ob with
@@ -679,9 +679,7 @@ let rec expr scope ppf = function
       func;
       arities } ->
     let pp_inlining_state ppf () =
-      (* CR lmaurer: Change this when we get control over inlining state syntax
-         *)
-      pp_option ~space:Before (pp_like "inlining_state%a" inlining_state)
+      pp_option ~space:Before (pp_like "inlining_state(%a)" inlining_state)
         ppf is
     in
     Format.fprintf ppf
@@ -758,13 +756,13 @@ and symbol_binding ppf (sb : symbol_binding) =
 and code_binding ppf ({ recursive = rec_; inline; id; newer_version_of;
                         param_arity; ret_arity; params_and_body;
                         code_size = cs } : code) =
-  Format.fprintf ppf "code@[<h>%a%a%a@] @[<hov2>%a%a"
+  Format.fprintf ppf "code@[<h>%a%a@ size(%a)%a@] @[<hov2>%a"
     (recursive ~space:Before) rec_
     (inline_attribute_opt ~space:Before) inline
-    code_id id
-    (code_size ~space:Before) cs
+    code_size cs
     (pp_option ~space:Before (pp_like "newer_version_of(%a)" code_id))
-      newer_version_of;
+      newer_version_of
+    code_id id;
   match params_and_body with
     | Deleted ->
       let pp_arity ppf =

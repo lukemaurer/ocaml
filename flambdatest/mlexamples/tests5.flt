@@ -1,5 +1,5 @@
 let $camlTests5__first_const23 = Block 0 () in
-let code rec f_0 (x : imm tagged) my_closure -> k * k1 : imm tagged =
+let code rec size(24) f_0 (x : imm tagged) my_closure -> k * k1 : imm tagged =
   let g = %select_closure (f -> g) my_closure in
   let prim = x < 4 in
   let Pintcomp = %Tag_imm prim in
@@ -11,7 +11,7 @@ let code rec f_0 (x : imm tagged) my_closure -> k * k1 : imm tagged =
       let Psubint = x - 1 in
       apply g (Psubint) -> k * k1
 in
-let code rec g_1 (y : imm tagged) my_closure -> k * k1 : imm tagged =
+let code rec size(24) g_1 (y : imm tagged) my_closure -> k * k1 : imm tagged =
   let f = %select_closure (g -> f) my_closure in
   let prim = y > 3 in
   let Pintcomp = %Tag_imm prim in
@@ -32,33 +32,33 @@ in
     let $camlTests5 = Block 0 (field_0, field_1) in
     cont done ($camlTests5)
 ===>
-let code rec f_0 deleted : imm tagged -> imm tagged in
-let code rec g_1 deleted : imm tagged -> imm tagged in
+let code rec size(24) f_0 deleted : imm tagged -> imm tagged in
+let code rec size(24) g_1 deleted : imm tagged -> imm tagged in
 let $camlTests5__f_2 =
   closure f_0_1 @f
 and $camlTests5__g_3 =
   closure g_1_1 @g
-and code rec g_1_1 newer_version_of(g_1) (y : imm tagged) my_closure -> k
-               * k1 : imm tagged =
+and code rec size(18) newer_version_of(g_1) g_1_1 (y : imm tagged) my_closure
+                                              -> k * k1 : imm tagged =
   let prim = y > 3 in
   switch prim
     | 0 -> k (7)
     | 1 -> k2
     where k2 =
       let Psubint = y - 1 in
-      apply direct(f_0_1 @f)
+      apply direct(f_0_1 @f) inlining_state(depth(0))
         ($camlTests5__f_2 : _ -> imm tagged)
         (Psubint)
         -> k * k1
-and code rec f_0_1 newer_version_of(f_0) (x : imm tagged) my_closure -> k
-               * k1 : imm tagged =
+and code rec size(18) newer_version_of(f_0) f_0_1 (x : imm tagged) my_closure
+                                              -> k * k1 : imm tagged =
   let prim = x < 4 in
   switch prim
     | 0 -> k (42)
     | 1 -> k2
     where k2 =
       let Psubint = x - 1 in
-      apply direct(g_1_1 @g)
+      apply direct(g_1_1 @g) inlining_state(depth(0))
         ($camlTests5__g_3 : _ -> imm tagged)
         (Psubint)
         -> k * k1

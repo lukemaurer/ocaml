@@ -253,6 +253,7 @@ let value_kind_with_subkind (k : Fexpr.kind_with_subkind)
   | Boxed_int64 -> KWS.boxed_int64
   | Boxed_nativeint -> KWS.boxed_nativeint
   | Tagged_immediate -> KWS.tagged_immediate
+  | Rec_info -> KWS.rec_info
 
 let value_kind
 : Fexpr.kind -> Flambda_kind.t = function
@@ -670,7 +671,8 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
             : Bound_symbols.Pattern.t * env =
         match b with
         | Code { id; _ } ->
-          let code_id, env = fresh_code_id env id in
+          (* All code ids were bound at the beginning; see [bind_all_code_ids] *)
+          let code_id = find_code_id env id in
           Bound_symbols.Pattern.code code_id, env
         | Data { symbol; _ } ->
           let symbol, env = declare_symbol env symbol in
@@ -897,7 +899,12 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
       inline |> Option.value ~default:Inline_attribute.Default_inline
     in
     let inlining_state =
-      inlining_state |> Option.value ~default:Inlining_state.default
+      match inlining_state with
+      | Some { depth; } ->
+        (* TODO inlining arguments *)
+        Inlining_state.create ~arguments:Inlining_arguments.unknown ~depth
+      | None ->
+        Inlining_state.default
     in
     let exn_continuation = find_exn_cont env exn_continuation in
     let apply =
@@ -916,6 +923,25 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
   | Invalid invalid ->
     Flambda.Expr.create_invalid ~semantics:invalid ()
 
+let bind_all_code_ids env (unit : Fexpr.flambda_unit) =
+  let rec go env (e : Fexpr.expr) =
+    match e with
+    | Let_symbol { bindings; body; _ } ->
+      let env = List.fold_left (fun env (binding : Fexpr.symbol_binding) ->
+          match binding with
+          | Code { id; _ } ->
+            let _, env = fresh_code_id env id in
+            env
+          | Data _
+          | Closure _
+          | Set_of_closures _ ->
+            env
+        ) env bindings
+          in go env body
+    | Let _ | Let_cont _ | Apply _ | Apply_cont _ | Switch _ | Invalid _ -> env
+  in
+  go env unit.body
+
 let conv ~backend ~module_ident (fexpr : Fexpr.flambda_unit) : Flambda_unit.t =
   let module Backend = (val backend : Flambda_backend_intf.S) in
   let module_symbol =
@@ -927,6 +953,7 @@ let conv ~backend ~module_ident (fexpr : Fexpr.flambda_unit) : Flambda_unit.t =
         error_continuation;
         _ } = env in
   let exn_continuation = Exn_continuation.exn_handler error_continuation in
+  let env = bind_all_code_ids env fexpr in
   let body = expr env fexpr.body in
   Flambda_unit.create
     ~return_continuation

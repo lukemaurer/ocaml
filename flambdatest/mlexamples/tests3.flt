@@ -1,5 +1,31 @@
 let $camlTests3__first_const37 = Block 0 () in
-let code foo_0 (arr, f, i : imm tagged) my_closure -> k * k1 =
+let code size(39) f_1
+                    (c : imm tagged, m, n, x' : imm tagged, y' : imm tagged)
+                    my_closure -> k * k1 : imm tagged =
+  (let prim = c < 0 in
+   let Pintcomp = %Tag_imm prim in
+   (let untagged = %untag_imm Pintcomp in
+    switch untagged
+      | 0 -> k3
+      | 1 -> k2 (x'))
+     where k3 =
+       let Paddint = x' + 10 in
+       cont k2 (Paddint))
+    where k2 (x : imm tagged) =
+      ((let prim = c < 0 in
+        let Pintcomp = %Tag_imm prim in
+        (let untagged = %untag_imm Pintcomp in
+         switch untagged
+           | 0 -> k3
+           | 1 -> k2 (y'))
+          where k3 =
+            let Paddint = y' + 20 in
+            cont k2 (Paddint))
+         where k2 (y : imm tagged) =
+           let Paddint = x + y in
+           cont k (Paddint))
+in
+let code size(80) foo_0 (arr, f, i : imm tagged) my_closure -> k * k1 =
   (let prim = %array_length dynamic arr in
    let prim_1 = %int_comp unsigned i < prim in
    switch prim_1
@@ -32,31 +58,6 @@ let code foo_0 (arr, f, i : imm tagged) my_closure -> k * k1 =
                 in
                 cont k (Parraysets)))
 in
-let code f_1 (c : imm tagged, m, n, x' : imm tagged, y' : imm tagged)
-           my_closure -> k * k1 : imm tagged =
-  (let prim = c < 0 in
-   let Pintcomp = %Tag_imm prim in
-   (let untagged = %untag_imm Pintcomp in
-    switch untagged
-      | 0 -> k3
-      | 1 -> k2 (x'))
-     where k3 =
-       let Paddint = x' + 10 in
-       cont k2 (Paddint))
-    where k2 (x : imm tagged) =
-      ((let prim = c < 0 in
-        let Pintcomp = %Tag_imm prim in
-        (let untagged = %untag_imm Pintcomp in
-         switch untagged
-           | 0 -> k3
-           | 1 -> k2 (y'))
-          where k3 =
-            let Paddint = y' + 20 in
-            cont k2 (Paddint))
-         where k2 (y : imm tagged) =
-           let Paddint = x + y in
-           cont k (Paddint))
-in
 (let foo = closure foo_0 @foo in
  let f = closure f_1 @f in
  let Pmakeblock = %Block 0 (foo, f) in
@@ -67,55 +68,59 @@ in
     let $camlTests3 = Block 0 (field_0, field_1) in
     cont done ($camlTests3)
 ===>
-let code foo_0 deleted : val * val * imm tagged -> val in
-let code f_1 deleted : imm tagged * val * val * imm tagged *
-           imm tagged -> imm tagged
+let code size(39) f_1 deleted :
+                    imm tagged * val * val * imm tagged * imm tagged -> 
+                    imm tagged
 in
-let code foo_0_1 newer_version_of(foo_0) (arr, f, i : imm tagged) my_closure
-           -> k * k1 =
+let code size(80) foo_0 deleted : val * val * imm tagged -> val in
+let code size(72) newer_version_of(foo_0) foo_0_1 (arr, f, i : imm tagged)
+                                            my_closure -> k * k1 =
   (let prim = %array_length dynamic arr in
    let prim_1 = %int_comp unsigned i < prim in
    switch prim_1
      | 0 -> k2
-     | 1 -> k3 (prim_1))
-    where k3 (cse_param : imm) =
+     | 1 -> k3 (prim))
+    where k3 (cse_param) =
       let Parrayrefs = %array_load dynamic mutable arr.(i) in
-      (apply f (Parrayrefs) -> k3 * k1
+      (apply inlining_state(depth(0)) f (Parrayrefs) -> k3 * k1
          where k3 (apply_result) =
-           (switch cse_param
-              | 0 -> k3
-              | 1 -> k4
+           ((let prim = %int_comp unsigned i < cse_param in
+             switch prim
+               | 0 -> k3
+               | 1 -> k4)
               where k4 =
                 let Parraysets = %array_set dynamic arr.(i) <- apply_result
                 in
                 cont k (Parraysets)
               where k3 =
-                apply ccall noalloc inline(never)
+                apply ccall noalloc inline(never) inlining_state(depth(0))
                   ($`.extern`.`.extern__caml_ml_array_bound_error` : unit ->
                     unit)
                   -> never * k1))
     where k2 =
-      apply ccall noalloc inline(never)
+      apply ccall noalloc inline(never) inlining_state(depth(0))
         ($`.extern`.`.extern__caml_ml_array_bound_error` : unit -> unit)
         -> never * k1
 in
 let $camlTests3__foo_2 = closure foo_0_1 @foo in
-let code f_1_1 newer_version_of(f_1)
-           (c : imm tagged, m, n, x' : imm tagged, y' : imm tagged)
-           my_closure -> k * k1 : imm tagged =
+let code size(31) newer_version_of(f_1) f_1_1
+                                          (c : imm tagged,
+                                           m,
+                                           n,
+                                           x' : imm tagged,
+                                           y' : imm tagged) my_closure -> k
+                                          * k1 : imm tagged =
   (let prim = c < 0 in
-   let Pintcomp = %Tag_imm prim in
    switch prim
      | 0 -> k3
-     | 1 -> k2 (x', Pintcomp)
+     | 1 -> k2 (x', prim)
      where k3 =
        let Paddint = x' + 10 in
-       cont k2 (Paddint, Pintcomp))
-    where k2 (x : imm tagged, cse_param) =
-      ((let untagged = %untag_imm cse_param in
-        switch untagged
-          | 0 -> k3
-          | 1 -> k2 (y'))
+       cont k2 (Paddint, prim))
+    where k2 (x : imm tagged, cse_param : imm) =
+      (switch cse_param
+         | 0 -> k3
+         | 1 -> k2 (y')
          where k3 =
            let Paddint = y' + 20 in
            cont k2 (Paddint)

@@ -301,9 +301,9 @@ code_header:
   | KWD_CODE;
     recursive = recursive;
     inline = option(inline);
-    id = code_id;
-    code_size = code_size;
+    KWD_SIZE LPAREN; code_size = code_size; RPAREN;
     newer_version_of = option(newer_version_of);
+    id = code_id;
     { recursive, inline, id, newer_version_of, code_size }
 ;
 
@@ -677,14 +677,14 @@ let (f', g') = closure({f, g}, {i = j; ...}) in
   | KWD_INLINE LPAREN KWD_DEFAULT RPAREN { Default_inline }
 
   inlining_state:
-  | KWD_INLINING_STATE LPAREN; i = inlining_state_depth; RPAREN
+  | KWD_INLINING_STATE LPAREN; depth = inlining_state_depth; RPAREN
     {
       (* CR poechsel: Parse the inlining arguments *)
-      Inlining_state.create ~arguments:Inlining_arguments.unknown ~depth:i
+      { depth }
     }
 
 inlining_state_depth:
-  | KWD_DEPTH; i = plain_int; { i }
+  | KWD_DEPTH LPAREN; i = plain_int; RPAREN { i }
 
 result_continuation:
   | c = continuation { Return c }
@@ -711,6 +711,7 @@ raise_kind:
 
 continuation_sort:
   | { None }
+  | KWD_EXN { Some Exn }
   | KWD_DEFINE_ROOT_SYMBOL { Some Define_root_symbol }
 ;
 

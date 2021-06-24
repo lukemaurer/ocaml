@@ -333,6 +333,7 @@ let kind_with_subkind (k : Flambda_kind.With_subkind.t)
   | Boxed_int64 -> Boxed_int64
   | Boxed_nativeint -> Boxed_nativeint
   | Tagged_immediate -> Tagged_immediate
+  | Rec_info -> Rec_info
 
 let arity (a : Flambda_arity.With_subkinds.t) : Fexpr.arity =
   List.map kind_with_subkind a
@@ -517,6 +518,12 @@ let static_const env (sc : Flambda.Static_const.t) : Fexpr.static_data =
   | Mutable_string { initial_value } -> Mutable_string { initial_value }
   | Immutable_string s -> Immutable_string s
 
+let inlining_state (is : Inlining_state.t) : Fexpr.inlining_state option =
+  if Inlining_state.equal is Inlining_state.default then None else
+    let depth = Inlining_state.depth is in
+    (* TODO: inlining arguments *)
+    Some { depth; }
+
 let rec expr env e =
   match Flambda.Expr.descr e with
   | Let l -> let_expr env l
@@ -579,8 +586,8 @@ and static_let_expr env bound_symbols scoping_rule defining_expr body
   let env =
     let bind_names env (pat : Bound_symbols.Pattern.t) =
       match pat with
-      | Code code_id ->
-        let _, env = Env.bind_code_id env code_id in
+      | Code _code_id ->
+        (* Already bound at the beginning; see [bind_all_code_ids] *)
         env
       | Block_like symbol ->
         let _, env = Env.bind_symbol env symbol in
@@ -624,8 +631,6 @@ and static_let_expr env bound_symbols scoping_rule defining_expr body
       in
       Set_of_closures { bindings; elements }
     | Code code_id, Code code ->
-      (* This is a binding occurrence, but it should have been added
-       * already during the first pass *)
       let code_id = Env.find_code_id_exn env code_id in
       let newer_version_of =
         Option.map (Env.find_code_id_exn env)
@@ -775,7 +780,7 @@ and cont_handler env cont_id (sort : Continuation.Sort.t) h =
   let is_exn_handler = Flambda.Continuation_handler.is_exn_handler h in
   let sort : Fexpr.continuation_sort option =
     match sort with
-    | Normal_or_exn -> None
+    | Normal_or_exn -> if is_exn_handler then Some Exn else None
     | Define_root_symbol -> assert (not is_exn_handler); Some Define_root_symbol
     | Return
     | Toplevel_return -> assert false
@@ -867,8 +872,7 @@ and apply_expr env (app : Apply_expr.t) : Fexpr.expr =
     | other -> Some other
   in
   let inlining_state =
-    let s = Apply_expr.inlining_state app in
-    if Inlining_state.equal s (Inlining_state.default) then None else Some(s)
+    inlining_state (Apply_expr.inlining_state app)
   in
   Apply { func; continuation; exn_continuation; args; call_kind; inline;
           inlining_state; arities }
@@ -905,11 +909,22 @@ and switch_expr env switch : Fexpr.expr =
 and invalid_expr _env invalid : Fexpr.expr =
   Invalid invalid
 
+let bind_all_code_ids env unit =
+  let env = ref env in
+  Flambda_unit.iter unit
+    ~code:(fun ~id _code ->
+        let _id, new_env = Env.bind_code_id !env id in
+        env := new_env);
+  !env
+
 let conv flambda_unit =
   let done_ = Flambda_unit.return_continuation flambda_unit in
   let error = Flambda_unit.exn_continuation flambda_unit in
   let env = Env.create () in
   let env = Env.bind_special_continuation env done_ ~to_:Done in
   let env = Env.bind_special_continuation env error ~to_:Error in
+  (* Bind all code ids in toplevel let bindings at the start, since they don't
+     necessarily occur in dependency order *)
+  let env = bind_all_code_ids env flambda_unit in
   let body = expr env (Flambda_unit.body flambda_unit) in
   { Fexpr.body }

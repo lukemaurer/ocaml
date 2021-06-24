@@ -1,3 +1,5 @@
+open! Int_replace_polymorphic_compare
+
 open Flambda
 
 (* General notes on comparison
@@ -1065,6 +1067,11 @@ let call_kinds env (call_kind1 : Call_kind.t) (call_kind2 : Call_kind.t)
     Different { approximant = call_kind1 }
 ;;
 
+let inlining_states_equal is1 is2 : bool =
+  (* CR lmaurer: Compare inlining arguments once we've added them to
+     the Flambda syntax *)
+  Inlining_state.depth is1 = Inlining_state.depth is2
+
 let apply_exprs env apply1 apply2 : Expr.t Comparison.t =
   let atomic_things_equal =
     Apply.Result_continuation.equal
@@ -1074,7 +1081,9 @@ let apply_exprs env apply1 apply2 : Expr.t Comparison.t =
          (Apply.exn_continuation apply1)
          (Apply.exn_continuation apply2)
     && Inline_attribute.equal (Apply.inline apply1) (Apply.inline apply2)
-    && Inlining_state.equal (Apply.inlining_state apply1)  (Apply.inlining_state apply2)
+    && inlining_states_equal
+         (Apply.inlining_state apply1)
+         (Apply.inlining_state apply2)
   in
   let ok = ref atomic_things_equal in
   let callee1' =
