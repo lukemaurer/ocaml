@@ -110,11 +110,11 @@ module Env = struct
     }
 
   let clear_local_bindings
-        { variables = _; globals; simples_to_substitute; backend;
+        { variables = _; globals; simples_to_substitute = _; backend;
           current_unit_id; symbol_for_global'; } =
     { variables = Ident.Map.empty;
       globals;
-      simples_to_substitute;
+      simples_to_substitute = Ident.Map.empty;
       backend;
       current_unit_id;
       symbol_for_global';
