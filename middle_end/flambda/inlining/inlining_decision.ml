@@ -157,10 +157,7 @@ let make_decision_for_function_declaration denv ~cost_metrics_source function_de
      first examining call sites. *)
   let code_id = Function_declaration.code_id function_decl in
   let code = DE.find_code denv code_id in
-  let args =
-    Code.inlining_arguments code
-    |> Inlining_arguments.meet (DE.inlining_arguments denv)
-  in
+  let args = Code.inlining_arguments code in
   match Code.inline code with
   | Never_inline -> Never_inline_attribute
   | Hint_inline | Always_inline -> Attribute_inline
