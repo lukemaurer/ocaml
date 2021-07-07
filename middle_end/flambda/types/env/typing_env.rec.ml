@@ -458,7 +458,7 @@ let aliases t =
 (* CR mshinwell: Should print name occurrence kinds *)
 (* CR mshinwell: Add option to print [aliases] *)
 let print_with_cache ~cache ppf
-      ({ resolver = _; get_imported_names = _;
+      ({ resolver = _; get_imported_names;
          prev_levels; current_level; next_binding_time = _;
          defined_symbols; code_age_relation; min_binding_time;
        } as t) =
@@ -478,13 +478,15 @@ let print_with_cache ~cache ppf
             @[<hov 1>(defined_symbols@ %a)@]@ \
             @[<hov 1>(code_age_relation@ %a)@]@ \
             @[<hov 1>(levels@ %a)@]@ \
-            @[<hov 1>(aliases@ %a)@]\
+            @[<hov 1>(aliases@ %a)@]@ \
+            @[<hov 1>((get_imported_names ())@ %a)@]\
             )@]"
         Symbol.Set.print defined_symbols
         Code_age_relation.print code_age_relation
         (Scope.Map.print (One_level.print_with_cache ~min_binding_time ~cache))
         levels
-        Aliases.print (aliases t))
+        Aliases.print (aliases t)
+        Name.Set.print (get_imported_names ()))
 
 let print ppf t =
   print_with_cache ~cache:(Printing_cache.create ()) ppf t
@@ -917,7 +919,7 @@ let invariant_for_new_equation (t:t) name ty =
     let free_names =
       Name_occurrences.without_code_ids (Type_grammar.free_names ty)
     in
-    if not (Name_occurrences.subset_domain free_names defined_names) then begin
+    if false && not (Name_occurrences.subset_domain free_names defined_names) then begin
       let unbound_names = Name_occurrences.diff free_names defined_names in
       Misc.fatal_errorf "New equation@ %a@ =@ %a@ has unbound names@ (%a):@ %a"
         Name.print name
@@ -985,6 +987,14 @@ let rec add_equation0 (t:t) name ty =
   res
 
 and add_equation t name ty =
+  if !Clflags.dump_flambda then begin
+    Format.eprintf
+      "@[<hov 1>add_equation@ \
+        @[<hov 1>(name@ %a)@]@ \
+        @[<hov 1>(ty@ %a)@]@]@.%!"
+      Name.print name
+      Type_grammar.print ty
+  end;
   if !Clflags.flambda_invariant_checks then begin
     let existing_ty = find t name None in
     if not (K.equal (Type_grammar.kind existing_ty) (Type_grammar.kind ty))
@@ -1036,6 +1046,11 @@ and add_equation t name ty =
          element as known by the alias tracker (the actual canonical, ignoring
          any name modes). *)
       let canonical = Aliases.get_canonical_ignoring_name_mode aliases name in
+      if !Clflags.dump_flambda then begin
+        Format.eprintf "- @[<hov 1>%a@ ↦ %a@]@.%!"
+          Name.print name
+          Simple.print canonical
+      end;
       canonical, t, ty
     | alias_of ->
       (* Forget where [name] and [alias_of] came from---our job is now to
@@ -1067,8 +1082,18 @@ and add_equation t name ty =
       let ty =
         Type_grammar.alias_type_of kind canonical_element
       in
+      if !Clflags.dump_flambda then begin
+        Format.eprintf "- @[<hov 1>%a@ demoted to alias of@ %a@]@.%!"
+          Simple.print alias_of_demoted_element
+          Simple.print canonical_element
+      end;
       alias_of_demoted_element, t, ty
   in
+  if !Clflags.dump_flambda then begin
+    Format.eprintf "- @[<hov 1>%a@ : %a@]@.%!"
+      Simple.print simple
+      Type_grammar.print ty
+  end;
   (* We have [(coerce <bare_lhs> <coercion>) : <ty>].
      Thus [<bare_lhs> : (coerce <ty> <coercion>^-1)]. *)
   let bare_lhs = Simple.without_coercion simple in
@@ -1081,6 +1106,13 @@ and add_equation t name ty =
     | Bottom -> Type_grammar.bottom (Type_grammar.kind ty)
     | Ok ty -> ty
   in
+  if
+    !Clflags.dump_flambda && not (Coercion.is_id coercion_from_ty_to_bare_lhs)
+  then begin
+    Format.eprintf "- @[<hov 1>%a@ : %a@]@.%!"
+      Simple.print bare_lhs
+      Type_grammar.print ty
+  end;
   (* Beware: if we're about to add the equation on a name which is different
      from the one that the caller passed in, then we need to make sure that the
      type we assign to that name is the most precise available. This
@@ -1101,6 +1133,25 @@ and add_equation t name ty =
       else
         let env = Meet_env.create t in
         let existing_ty = find t eqn_name (Some (Type_grammar.kind ty)) in
+        if !Clflags.dump_flambda then begin
+          Format.eprintf
+            "- @[<hov 1>already have@ %a@ : %a@]@.\
+             - @[<hov 1>env: %a@]@.%!"
+            Name.print eqn_name
+            Type_grammar.print existing_ty
+            print t
+        end;
+        begin fun ((new_ty, _) as ans) ->
+          if !Clflags.dump_flambda then begin
+            Format.eprintf
+              "- @[<hov 1>%a@ ∧ %a@ = %a@]@.%!"
+              Type_grammar.print ty
+              Type_grammar.print existing_ty
+              Type_grammar.print new_ty
+          end;
+          ans
+        end
+        @@
         match Type_grammar.meet env ty existing_ty with
         | Bottom -> Type_grammar.bottom_like ty, t
         | Ok (meet_ty, env_extension) ->

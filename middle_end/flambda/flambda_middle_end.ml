@@ -45,20 +45,25 @@ let print_rawflambda ppf unit =
       Print_fexpr.flambda_unit (unit |> Flambda_to_fexpr.conv)
   end
 
-let print_flambda name ppf unit =
+let print_flambda name ppf (result : Simplify.simplify_result) =
+  let print_result ppf (result : Simplify.simplify_result) =
+    match result.cmx with
+    | Some cmx -> Flambda_cmx_format.print ppf cmx
+    | None -> Flambda_unit.print ppf result.unit
+  in
   if !Clflags.dump_flambda then begin
     Format.fprintf ppf "\n%sAfter %s:%s@ %a@."
       (Flambda_colours.each_file ())
       name
       (Flambda_colours.normal ())
-      Flambda_unit.print unit
+      print_result result
   end;
   if !Clflags.dump_fexpr then begin
     Format.fprintf ppf "\n%sAfter %s:%s@ %a@."
       (Flambda_colours.each_file ())
       name
       (Flambda_colours.normal ())
-      Print_fexpr.flambda_unit (unit |> Flambda_to_fexpr.conv)
+      Print_fexpr.flambda_unit (result.unit |> Flambda_to_fexpr.conv)
   end
 
 let output_flexpect ~ml_filename old_unit new_unit =
@@ -101,7 +106,7 @@ let middle_end0 ppf ~prefixname ~backend ~filename ~module_ident
       let output_prefix = Printf.sprintf "%s.%d" prefixname round in
       Inlining_report.output_then_forget_decisions ~output_prefix
     end;
-    print_flambda "simplify" ppf new_flambda.unit;
+    print_flambda "simplify" ppf new_flambda;
     output_flexpect ~ml_filename:filename flambda new_flambda.unit;
     new_flambda)
 

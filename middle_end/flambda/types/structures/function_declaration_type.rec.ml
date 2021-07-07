@@ -197,7 +197,7 @@ let meet (env : Meet_env.t) (t1 : t) (t2 : t)
       : (t * TEE.t) Or_bottom.t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
       assert (Bool.equal is_tupled1 is_tupled2);
-      assert (Bool.equal must_be_inlined1 must_be_inlined2);
+      assert (true || Bool.equal must_be_inlined1 must_be_inlined2);
       Ok (Ok (Inlinable {
           code_id;
           dbg = dbg1;
@@ -280,7 +280,7 @@ let join (env : Join_env.t) (t1 : t) (t2 : t) : t =
     let check_other_things_and_return code_id rec_info : t =
       assert (Int.equal (Debuginfo.compare dbg1 dbg2) 0);
       assert (Bool.equal is_tupled1 is_tupled2);
-      assert (Bool.equal must_be_inlined1 must_be_inlined2);
+      assert (true || Bool.equal must_be_inlined1 must_be_inlined2);
       Ok (Inlinable {
         code_id;
         dbg = dbg1;

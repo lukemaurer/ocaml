@@ -29,6 +29,13 @@ let rename ?append t =
   in
   let user_visible = if user_visible t then Some () else None in
   create ?user_visible name
+  |> fun ans ->
+  if !Clflags.dump_rawflambda && String.equal name "empty" then begin
+    Format.eprintf "@[<hov 1>Variable.rename@ %a@ -> %a@]@.%!"
+      print t
+      print ans
+  end;
+  ans
 
 let raw_name = name
 let raw_name_stamp = name_stamp

@@ -143,6 +143,11 @@ let simplify_direct_full_application ~simplify_expr dacc apply function_decl_opt
         let dacc, inlined =
           Inlining_transforms.inline dacc ~apply ~unroll_to function_decl
         in
+        if !Clflags.dump_rawflambda then begin
+          Format.eprintf "@[<hov 1>INLINING@ %a:@ %a@]"
+            Code_id.print code_id
+            Expr.print inlined
+        end;
         Some (dacc, inlined)
   in
   match inlined with

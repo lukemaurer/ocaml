@@ -18,7 +18,8 @@
 
 type t
 
-(* val print : Format.formatter -> t -> unit *)
+val print : Format.formatter -> t -> unit
+[@@ocaml.warning "-unused-value-declaration"]
 
 val create
    : Typing_env.t

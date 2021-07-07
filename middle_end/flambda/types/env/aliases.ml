@@ -420,8 +420,28 @@ let print ppf { canonical_elements; aliases_of_canonical_names;
     binding_times_and_modes
 
 let name_defined_earlier t alias ~than =
+  let print_with_info ppf (name, info) =
+    Format.fprintf ppf "@[<hov 1>(%a:@ %a)@]"
+      Name.print name
+      Binding_time.With_name_mode.print info
+  in
   let info1 = Name.Map.find alias t.binding_times_and_modes in
   let info2 = Name.Map.find than t.binding_times_and_modes in
+  if false && !Clflags.dump_flambda then begin
+    Format.eprintf "@[<hov 1>name_defined_earlier@ %a@ %a@]@.%!"
+      print_with_info (alias, info1)
+      print_with_info (than, info2)
+  end;
+  begin fun ans ->
+    if false && !Clflags.dump_flambda then begin
+      Format.eprintf "- @[<hov 1>%a@ %s@ %a@]@.%!"
+        Name.print alias
+        (if ans then "earlier than" else "no earlier than")
+        Name.print than
+    end;
+    ans
+  end
+  @@
   Binding_time.strictly_earlier
     (Binding_time.With_name_mode.binding_time info1)
     ~than:(Binding_time.With_name_mode.binding_time info2)
@@ -683,7 +703,7 @@ type add_result = {
   alias_of_demoted_element : Simple.t;
 }
 
-let invariant_add_result
+let invariant_add_result ~element1 ~element2
       ~original_t { canonical_element; alias_of_demoted_element; t; } =
   if !Clflags.flambda_invariant_checks then begin
     invariant t;
@@ -696,7 +716,7 @@ let invariant_add_result
         print original_t
         print t
     end;
-    match canonical t alias_of_demoted_element with
+    begin match canonical t alias_of_demoted_element with
     | Is_canonical ->
         Misc.fatal_errorf "Alias %a must not be must not be canonical \
             anymore.@ \
@@ -706,13 +726,47 @@ let invariant_add_result
           print original_t
           print t
     | Alias_of_canonical _ -> ()
+    end;
+    let eq_up_to_coercion simple1 simple2 =
+      Simple.(equal (without_coercion simple1) (without_coercion simple2))
+    in
+    if
+      not (eq_up_to_coercion element1 alias_of_demoted_element
+           || eq_up_to_coercion element2 alias_of_demoted_element)
+    then begin
+      Misc.fatal_errorf "%a@ should be equal to either@ %a@ or@ %a"
+        Simple.print alias_of_demoted_element
+        Simple.print element1
+        Simple.print element2
+    end
   end
 
 let add_alias t ~element1 ~coercion_from_element2_to_element1 ~element2 =
+  if !Clflags.dump_flambda then begin
+    Format.eprintf "@[<hov 1>add_alias@ %a@ <--[%a]--@ %a@]@.%!"
+      Simple.print element1
+      Coercion.print coercion_from_element2_to_element1
+      Simple.print element2
+  end;
   let add ~canonical_element1 ~canonical_element2
         ~coercion_from_element1_to_canonical_element1
         ~coercion_from_element2_to_canonical_element2
         ~coercion_from_canonical_element2_to_canonical_element1 =
+    if !Clflags.dump_flambda then begin
+      Format.eprintf
+        "- @[<hov 1>%a@ <--[%a]--|@ %a@]@.\
+         - @[<hov 1>%a@ <--[%a]--|@ %a@]@.\
+         - @[<hov 1>%a@ <--[%a]--|@ %a@]@.%!"
+        Simple.print canonical_element1
+        Coercion.print coercion_from_element1_to_canonical_element1
+        Simple.print element1
+        Simple.print canonical_element2
+        Coercion.print coercion_from_element2_to_canonical_element2
+        Simple.print element2
+        Simple.print canonical_element1
+        Coercion.print coercion_from_canonical_element2_to_canonical_element1
+        Simple.print canonical_element2
+    end;
     if Simple.equal canonical_element1 canonical_element2
     then
       let canonical_element = canonical_element1 in
@@ -945,7 +999,10 @@ let add t ~element1:element1_with_coercion ~binding_time_and_mode1
   in
   let add_result = add_alias t ~element1 ~coercion_from_element2_to_element1 ~element2 in
   if !Clflags.flambda_invariant_checks then begin
-    invariant_add_result ~original_t add_result
+    invariant_add_result
+      ~element1:element1_with_coercion
+      ~element2:element2_with_coercion
+      ~original_t add_result
   end;
   add_result
 

@@ -23,7 +23,7 @@ type t =
     right_join_env : Typing_env.t;
   }
 
-let _print ppf { central_env; left_join_env; right_join_env; } =
+let print ppf { central_env; left_join_env; right_join_env; } =
     let join_env name ppf env =
       Format.fprintf ppf "@ @[<hov 1>(%s@ %a)@]@" name
         Typing_env.print env

@@ -320,6 +320,7 @@ end = struct
       Variable.Set.fold (fun dv env_inside_functions ->
           let name = Name.var dv in
           let env_inside_functions =
+            if true then env_inside_functions else
             TE.add_definition env_inside_functions
               (Name_in_binding_pos.create name Name_mode.normal)
               K.rec_info
